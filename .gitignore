@@ -1,0 +1,19 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.env.local
+.env.production
+.env.development
+.env.staging
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Project-specific ignores
+ipcamera.zip
+nul

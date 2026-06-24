@@ -1,0 +1,48 @@
+services:
+  # ── PostgreSQL Database ──
+  postgres:
+    image: postgres:16-alpine
+    container_name: ipcamera-db
+    environment:
+      POSTGRES_USER: ipcamera
+      POSTGRES_PASSWORD: ipcamera123
+      POSTGRES_DB: ipcamera
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ipcamera"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Application ──
+  app:
+    build: .
+    container_name: ipcamera-app
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=ipcamera
+      - DB_PASSWORD=ipcamera123
+      - DB_NAME=ipcamera
+      - JWT_SECRET_KEY=change-this-in-production-8a7f9b2c
+      - DEBUG=false
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-mosquitto}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
