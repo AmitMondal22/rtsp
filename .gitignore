@@ -17,3 +17,4 @@ Thumbs.db
 # Project-specific ignores
 ipcamera.zip
 nul
+env/
