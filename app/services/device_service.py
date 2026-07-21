@@ -11,14 +11,16 @@ from app.schemas.device import DeviceCreate, DeviceUpdate
 
 def sanitize_rtsp_url(url: str) -> str:
     """
-    Fix malformed RTSP URLs that are missing the port number.
-
-    Wrong:  rtsp://admin:pass@192.168.1.1:/stream1
-    Fixed:  rtsp://admin:pass@192.168.1.1:554/stream1
-
-    Does NOT touch URLs that already have a valid port.
+    Fix malformed RTSP URLs.
+    Examples:
+      rtsp:554//admin1234:12345678@192.168.29.114:554/stream1 -> rtsp://admin1234:12345678@192.168.29.114:554/stream1
+      rtsp://admin:pass@192.168.1.1:/stream1                -> rtsp://admin:pass@192.168.1.1:554/stream1
     """
-    # Only fix genuinely empty ports: host:/path (colon followed immediately by /)
+    if not url:
+        return url
+    # Fix typos like 'rtsp:554//' or 'rtsp:PORT//' -> 'rtsp://'
+    url = re.sub(r'^rtsp:\d+//', 'rtsp://', url)
+    # Fix genuinely empty ports: host:/path -> host:554/path
     url = re.sub(r'(@[^/:]+|://[^/:@]+):(/)', r'\1:554\2', url)
     return url
 
@@ -92,6 +94,12 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
             auth_part = f"{username}:{password}@"
         rtsp_url = f"rtsp://{auth_part}{host}:{port}{stream_path}"
 
+    target_bank_id = device_data.bank_id or user.bank_id
+    if not target_bank_id and device_data.assigned_user_id:
+        assigned_user = db.query(User).filter(User.id == device_data.assigned_user_id).first()
+        if assigned_user:
+            target_bank_id = assigned_user.bank_id
+
     device = Device(
         name=device_data.name,
         device_type=device_data.device_type,
@@ -110,6 +118,13 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
         longitude=device_data.longitude,
         extra_config=device_data.extra_config or {},
         owner_id=user.id,
+        bank_id=target_bank_id,
+        assigned_user_id=device_data.assigned_user_id,
+        assigned_user_2_id=device_data.assigned_user_2_id,
+        whatsapp_number_1=device_data.whatsapp_number_1,
+        whatsapp_number_2=device_data.whatsapp_number_2,
+        enable_email=device_data.enable_email if device_data.enable_email is not None else True,
+        enable_whatsapp=device_data.enable_whatsapp if device_data.enable_whatsapp is not None else True,
     )
     db.add(device)
     db.commit()
@@ -118,7 +133,14 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
 
 
 def get_user_devices(db: Session, user: User) -> list[Device]:
-    return db.query(Device).filter(Device.owner_id == user.id).all()
+    if user.role == "super_admin":
+        return db.query(Device).all()
+    elif user.role == "bank_admin":
+        return db.query(Device).filter(Device.bank_id == user.bank_id).all()
+    else:
+        return db.query(Device).filter(
+            (Device.assigned_user_id == user.id) | (Device.bank_id == user.bank_id)
+        ).all()
 
 
 def get_device_by_id(db: Session, device_id: int) -> Device:
@@ -133,6 +155,11 @@ def update_device_service(db: Session, device_id: int, update_data: DeviceUpdate
     update_dict = update_data.model_dump(exclude_unset=True)
     for field, value in update_dict.items():
         setattr(device, field, value)
+
+    if "assigned_user_id" in update_dict and update_dict["assigned_user_id"]:
+        assigned_user = db.query(User).filter(User.id == update_dict["assigned_user_id"]).first()
+        if assigned_user and assigned_user.bank_id:
+            device.bank_id = assigned_user.bank_id
 
     # Rebuild RTSP URL if manual components changed and rtsp_url was not explicitly updated
     manual_fields_changed = any(f in update_dict for f in ["host", "port", "username", "password", "stream_path"])
@@ -160,7 +187,9 @@ def assign_device_service(db: Session, device_id: int, user_id: int) -> Device:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    device.owner_id = user_id
+    device.assigned_user_id = user_id
+    if user.bank_id:
+        device.bank_id = user.bank_id
     db.commit()
     db.refresh(device)
     return device

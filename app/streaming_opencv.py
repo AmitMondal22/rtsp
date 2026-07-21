@@ -151,19 +151,9 @@ async def generate_mjpeg_frames(
 
         if not opened:
             if attempt < max_reconnect:
-                yield (
-                    boundary
-                    + b"Content-Type: text/plain\r\n\r\n"
-                    + f"Connecting (attempt {attempt}/{max_reconnect})...\r\n".encode()
-                )
                 await asyncio.sleep(reconnect_delay * attempt)
                 continue
             else:
-                yield (
-                    boundary
-                    + b"Content-Type: text/plain\r\n\r\n"
-                    + b"Failed to connect to camera. Refresh to retry.\r\n"
-                )
                 return
 
         logger.info("OpenCV stream started (attempt %d/%d)", attempt, max_reconnect)
@@ -185,15 +175,6 @@ async def generate_mjpeg_frames(
 
         # Stream dropped — attempt reconnect
         if attempt < max_reconnect:
-            yield (
-                boundary
-                + b"Content-Type: text/plain\r\n\r\n"
-                + f"Reconnecting (attempt {attempt + 1}/{max_reconnect})...\r\n".encode()
-            )
             await asyncio.sleep(reconnect_delay * attempt)
         else:
-            yield (
-                boundary
-                + b"Content-Type: text/plain\r\n\r\n"
-                + b"Stream disconnected. Refresh to reconnect.\r\n"
-            )
+            return

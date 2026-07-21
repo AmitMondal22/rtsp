@@ -1,4 +1,5 @@
 import datetime
+from typing import Optional
 from pydantic import BaseModel, field_validator
 
 
@@ -28,4 +29,6 @@ class OTPVerifyOut(BaseModel):
 
 class CameraActionRequest(BaseModel):
     mode: str = "thread"
+    user_id_1: Optional[int] = None
+    user_id_2: Optional[int] = None
 

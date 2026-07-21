@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -10,12 +10,15 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=False)
+    whatsapp_number = Column(String(20), nullable=True)
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
-    role = Column(String(20), default="user")  # user, admin
+    role = Column(String(20), default="user")  # super_admin, bank_admin, user
+    bank_id = Column(Integer, ForeignKey("banks.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
-    devices = relationship("Device", back_populates="owner")
+    bank = relationship("Bank", back_populates="users")
+    devices = relationship("Device", back_populates="owner", foreign_keys="[Device.owner_id]")
     messages = relationship("ThreadMessage", back_populates="sender")
     otp_codes = relationship("OTPCode", back_populates="user")

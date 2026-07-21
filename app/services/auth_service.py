@@ -46,31 +46,29 @@ def get_current_user(
     elif token:
         jwt_token = token
 
-    # If a token is found, validate and decode it
-    if jwt_token:
-        try:
-            payload = jwt.decode(jwt_token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-            sub = payload.get("sub")
-            if sub is not None:
-                user_id = int(sub)
-                user = db.query(User).filter(User.id == user_id).first()
-                if user:
-                    return user
-        except Exception:
-            pass
-
-    # If no credentials or validation failed, auto-login default admin
-    admin_user = db.query(User).filter(User.username == "admin").first()
-    if not admin_user:
-        admin_user = User(
-            username="admin",
-            email="admin@ipcamera.local",
-            hashed_password=hash_password("admin123"),
+    if not jwt_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-        db.add(admin_user)
-        db.commit()
-        db.refresh(admin_user)
-    return admin_user
+
+    try:
+        payload = jwt.decode(jwt_token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        sub = payload.get("sub")
+        if sub is not None:
+            user_id = int(sub)
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                return user
+    except Exception:
+        pass
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def register_user_service(db: Session, username: str, email: str, password: str) -> User:
@@ -82,10 +80,16 @@ def register_user_service(db: Session, username: str, email: str, password: str)
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username or email already exists",
         )
+    from app.models.bank import Bank
+    first_bank = db.query(Bank).first()
+    target_bank_id = first_bank.id if first_bank else None
+
     new_user = User(
         username=username,
         email=email,
         hashed_password=hash_password(password),
+        bank_id=target_bank_id,
+        role="user",
     )
     db.add(new_user)
     db.commit()

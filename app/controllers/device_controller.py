@@ -18,12 +18,35 @@ from app.services.device_service import (
 router = APIRouter(prefix="/api/devices", tags=["Devices"])
 
 
+def check_device_access(device: Device, user: User):
+    if user.role == "super_admin":
+        return
+    if user.role == "bank_admin" and device.bank_id == user.bank_id:
+        return
+    if user.role == "user" and (device.assigned_user_id == user.id or device.bank_id == user.bank_id):
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+def check_device_admin_access(device: Device, user: User):
+    if user.role == "super_admin":
+        return
+    if user.role == "bank_admin" and device.bank_id == user.bank_id:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
 @router.post("/", response_model=DeviceOut)
 def create_device(
     device: DeviceCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.role not in ["super_admin", "bank_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can create devices",
+        )
     return create_device_service(db, device, current_user)
 
 
@@ -41,6 +64,10 @@ def list_all_devices(
     current_user: User = Depends(get_current_user),
 ):
     """List all devices (admin view)."""
+    if current_user.role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
     return db.query(Device).all()
 
 
@@ -51,8 +78,7 @@ def get_device(
     current_user: User = Depends(get_current_user),
 ):
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_access(device, current_user)
     return device
 
 
@@ -64,8 +90,7 @@ def update_device(
     current_user: User = Depends(get_current_user),
 ):
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_admin_access(device, current_user)
     return update_device_service(db, device_id, device_update)
 
 
@@ -76,8 +101,7 @@ def delete_device(
     current_user: User = Depends(get_current_user),
 ):
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_admin_access(device, current_user)
     delete_device_service(db, device_id)
 
 
@@ -89,8 +113,18 @@ def assign_device(
     current_user: User = Depends(get_current_user),
 ):
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_admin_access(device, current_user)
+    # Check if target user is in same bank (unless super_admin)
+    target_user = db.query(User).filter(User.id == assignment.user_id).first()
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found"
+        )
+    if current_user.role != "super_admin" and target_user.bank_id != current_user.bank_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot assign device to a user in a different bank",
+        )
     return assign_device_service(db, device_id, assignment.user_id)
 
 
@@ -101,9 +135,8 @@ def unassign_device(
     current_user: User = Depends(get_current_user),
 ):
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    device.owner_id = None
+    check_device_admin_access(device, current_user)
+    device.assigned_user_id = None
     db.commit()
     db.refresh(device)
     return device

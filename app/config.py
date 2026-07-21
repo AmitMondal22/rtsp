@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     MQTT_USERNAME: Optional[str] = None
     MQTT_PASSWORD: Optional[str] = None
 
+    # WhatsApp Gateway
+    WHATSAPP_API_URL: Optional[str] = None
+    WHATSAPP_API_TOKEN: Optional[str] = None
+    WHATSAPP_FROM_NUMBER: Optional[str] = None
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

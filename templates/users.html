@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="User Management – IOTBLITZ" />
+    <title>User Management – IOTBLITZ</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            purple: '#9060ff',
+                            blue: '#1a8cff',
+                            darkBg: '#111217',
+                            sidebar: '#1c1d22',
+                            iconbar: '#15161b',
+                            cardBg: '#1e1f25',
+                            border: '#2b2c33',
+                            muted: '#85868e',
+                            danger: '#ef4444',
+                            success: '#10b981',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="/static/style.css?v=1.2" />
+</head>
+
+<body class="bg-brand-darkBg text-slate-100 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-brand-blue selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <nav class="bg-brand-sidebar border-b border-brand-border px-4 py-2 flex items-center justify-between shrink-0 select-none">
+        <div class="flex items-center space-x-4">
+            <a class="text-brand-purple font-bold tracking-widest text-xs uppercase flex items-center" href="/dashboard">
+                <i class="bi bi-camera-video-fill mr-2.5"></i> IOTBLITZ
+            </a>
+            <div class="border-l border-brand-border pl-4 flex items-center space-x-1 text-brand-muted text-xs">
+                <i class="bi bi-people mr-1 text-brand-blue"></i>
+                <span class="text-white font-semibold">User Management</span>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-4">
+            <!-- Account Dropdown -->
+            <div class="relative inline-block text-left" id="user-profile-dropdown">
+                <button class="hover:text-white transition cursor-pointer flex items-center focus:outline-none"
+                    id="user-menu-btn" title="User Profile">
+                    <i class="bi bi-person-circle text-slate-300 hover:text-white text-lg"></i>
+                </button>
+                <div id="user-dropdown-menu"
+                    class="absolute right-0 mt-2.5 w-48 bg-brand-cardBg border border-brand-border rounded shadow-2xl py-2 z-50 hidden">
+                    <div class="px-3 py-1 border-b border-brand-border text-brand-muted text-[9px] font-bold uppercase tracking-wider">Account Info</div>
+                    <div class="px-3 py-2 text-[11px] text-slate-300">
+                        <span class="block font-semibold text-white truncate" id="user-dropdown-username">Username</span>
+                        <span class="block text-brand-muted text-[10px] mt-0.5" id="user-dropdown-role">ROLE</span>
+                    </div>
+                    <div class="border-t border-brand-border my-1"></div>
+                    <button id="logout-btn" class="w-full text-left px-3 py-1.5 hover:bg-brand-border hover:text-white text-[11px] text-brand-danger transition flex items-center">
+                        <i class="bi bi-box-arrow-right mr-2"></i> Log Out
+                    </button>
+                </div>
+            </div>
+
+            <!-- Clock -->
+            <div class="border-l border-brand-border pl-4 text-right leading-tight font-mono select-none" style="font-size: 10px;">
+                <div id="nav-clock" class="text-white font-semibold">12:34:00 AM</div>
+                <div id="nav-date" class="text-brand-muted">2026/07/15</div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Page Body -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Left Icon Sidebar -->
+        <aside class="w-14 bg-brand-iconbar border-r border-brand-border flex flex-col items-center py-4 space-y-4 shrink-0">
+            <a href="/dashboard" title="Cameras & Live Feed"
+                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
+                <i class="bi bi-camera-video-fill text-base"></i>
+            </a>
+            <a href="/banks" id="nav-banks-link" title="Bank Management"
+                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
+                <i class="bi bi-bank text-base"></i>
+            </a>
+            <a href="/users" title="User Management"
+                class="w-8 h-8 rounded flex items-center justify-center text-white bg-brand-blue active:scale-95 transition">
+                <i class="bi bi-people text-base"></i>
+            </a>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 bg-brand-darkBg overflow-y-auto p-6">
+            <div class="max-w-6xl mx-auto space-y-6">
+
+                <!-- Page Header with Add User Modal Trigger -->
+                <div class="flex items-center justify-between border-b border-brand-border pb-4">
+                    <div class="flex items-center space-x-3">
+                        <i class="bi bi-people text-brand-blue text-2xl"></i>
+                        <div>
+                            <h1 class="text-lg font-bold text-white">User Management</h1>
+                            <p class="text-xs text-brand-muted">Register and manage users under bank branches</p>
+                        </div>
+                    </div>
+                    <button id="open-add-user-modal" class="px-4 py-2 bg-brand-blue hover:bg-brand-blue/90 active:scale-95 transition text-white font-bold rounded-lg text-xs flex items-center shadow-lg">
+                        <i class="bi bi-person-plus-fill mr-1.5"></i> Add User
+                    </button>
+                </div>
+
+                <!-- Bank Users Table -->
+                <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6">
+                    <div class="flex items-center justify-between border-b border-brand-border pb-4 mb-5">
+                        <div class="flex items-center space-x-2">
+                            <i class="bi bi-people text-brand-blue text-lg"></i>
+                            <h2 class="text-sm font-bold text-white">Registered Users</h2>
+                        </div>
+                        <span id="users-count" class="bg-brand-darkBg px-2 py-0.5 rounded text-[10px] text-brand-muted font-normal"></span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm border-collapse">
+                            <thead>
+                                <tr class="border-b border-brand-border text-brand-muted text-xs uppercase tracking-wider">
+                                    <th class="py-3 pr-4 font-bold w-16">ID</th>
+                                    <th class="py-3 pr-4 font-bold">Username</th>
+                                    <th class="py-3 pr-4 font-bold">Email</th>
+                                    <th class="py-3 pr-4 font-bold">WhatsApp</th>
+                                    <th class="py-3 pr-4 font-bold">Bank</th>
+                                    <th class="py-3 pr-4 font-bold">Role</th>
+                                    <th class="py-3 font-bold text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body" class="divide-y divide-brand-border/40 text-slate-300">
+                                <tr>
+                                    <td colspan="7" class="py-8 text-center text-brand-muted text-xs">
+                                        <i class="bi bi-hourglass-split mr-2 animate-spin"></i> Loading users...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- ── Add User Modal ── -->
+    <div id="add-user-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg">
+                <div class="flex items-center space-x-2">
+                    <i class="bi bi-person-plus text-brand-blue text-lg"></i>
+                    <h3 class="font-bold text-white text-sm">Register New User</h3>
+                </div>
+                <button id="close-add-user-modal" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <form id="add-user-form" class="p-5 space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Username *</label>
+                        <input id="user-username" type="text"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
+                            placeholder="Username" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Email *</label>
+                        <input id="user-email" type="email"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
+                            placeholder="email@bank.com" required />
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">WhatsApp</label>
+                        <input id="user-whatsapp" type="text"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
+                            placeholder="+919876543210" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Role *</label>
+                        <select id="user-role"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 focus:outline-none focus:border-brand-blue">
+                            <option value="user" selected>User (Regular)</option>
+                            <option value="bank_admin">Bank Admin</option>
+                            <option value="admin">System Admin</option>
+                            <option value="super_admin">Super Admin</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div id="user-bank-wrapper">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Bank</label>
+                        <select id="user-bank-id"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 focus:outline-none focus:border-brand-blue">
+                            <option value="">— Primary Bank —</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Password *</label>
+                        <input id="user-password" type="password"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
+                            placeholder="Min 6 characters" required />
+                    </div>
+                </div>
+                <p id="add-user-error" class="text-brand-danger text-xs"></p>
+                <div class="flex justify-end space-x-3 pt-2">
+                    <button type="button" id="cancel-add-user" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Register User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ── Edit User Modal ── -->
+    <div id="edit-user-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg">
+                <div class="flex items-center space-x-2">
+                    <i class="bi bi-pencil-square text-brand-blue text-lg"></i>
+                    <h3 class="font-bold text-white text-sm">Edit User Info</h3>
+                </div>
+                <button id="close-edit-user-modal" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <form id="edit-user-form" class="p-5 space-y-4">
+                <input type="hidden" id="edit-user-id" />
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Username *</label>
+                        <input id="edit-user-username" type="text"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
+                            required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Email *</label>
+                        <input id="edit-user-email" type="email"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
+                            required />
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">WhatsApp</label>
+                        <input id="edit-user-whatsapp" type="text"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
+                            placeholder="+919876543210" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Role *</label>
+                        <select id="edit-user-role"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 focus:outline-none focus:border-brand-blue">
+                            <option value="user">User (Regular)</option>
+                            <option value="bank_admin">Bank Admin</option>
+                            <option value="admin">System Admin</option>
+                            <option value="super_admin">Super Admin</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div id="edit-user-bank-wrapper">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Bank</label>
+                        <select id="edit-user-bank-id"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 focus:outline-none focus:border-brand-blue">
+                            <option value="">— Primary Bank —</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">New Password (optional)</label>
+                        <input id="edit-user-password" type="password"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
+                            placeholder="Leave blank to keep current" />
+                    </div>
+                </div>
+                <p id="edit-user-error" class="text-brand-danger text-xs"></p>
+                <div class="flex justify-end space-x-3 pt-2">
+                    <button type="button" id="cancel-edit-user" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/users.js?v=1.1"></script>
+</body>
+</html>

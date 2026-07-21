@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
+from app.models.message import ThreadMessage
 from app.schemas.device import DeviceStreamOut
 from app.schemas.message import ThreadMessageCreate, ThreadMessageOut
 from app.schemas.otp import OTPGenerateOut, OTPVerifyIn, OTPVerifyOut, CameraActionRequest
@@ -18,6 +19,7 @@ from app.services.camera_service import (
 )
 from app.streaming import validate_rtsp_with_fallback
 from app.streaming_opencv import generate_mjpeg_frames
+from app.controllers.device_controller import check_device_access
 
 router = APIRouter(prefix="/api/camera", tags=["Camera"])
 
@@ -31,8 +33,7 @@ def get_stream_url(
 ):
     """Return stream URLs (RTSP, MJPEG, HLS) for a device."""
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_access(device, current_user)
 
     rtsp_url = build_rtsp_url(device)
     base = f"/api/camera/{device_id}"
@@ -59,8 +60,7 @@ def mjpeg_stream(
     with a simple <img> tag. Much more reliable than WebRTC on Windows.
     """
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_access(device, current_user)
 
     rtsp_url = build_rtsp_url(device)
     transport = device.transport or "tcp"
@@ -73,7 +73,7 @@ def mjpeg_stream(
 
 # ── Test RTSP Connectivity ──
 @router.get("/{device_id}/test-stream")
-async def test_stream(
+def test_stream(
     device_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -86,8 +86,7 @@ async def test_stream(
     import os
 
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_access(device, current_user)
 
     rtsp_url = build_rtsp_url(device)
     transport = device.transport or "tcp"
@@ -125,7 +124,6 @@ async def test_stream(
     }
 
 
-
 @router.get("/otp-requests")
 def get_global_otp_requests(
     db: Session = Depends(get_db),
@@ -135,21 +133,34 @@ def get_global_otp_requests(
     from app.models.device import Device
     from app.models.message import ThreadMessage
 
-    # Find all devices owned by the user
-    devices = db.query(Device).filter(Device.owner_id == current_user.id).all()
+    if current_user.role == "super_admin":
+        devices = db.query(Device).all()
+    elif current_user.role == "bank_admin":
+        devices = db.query(Device).filter(Device.bank_id == current_user.bank_id).all()
+    else:
+        devices = db.query(Device).filter(Device.assigned_user_id == current_user.id).all()
+
     device_ids = [d.id for d in devices]
     if not device_ids:
         return []
 
-    messages = (
-        db.query(ThreadMessage)
-        .filter(
-            ThreadMessage.device_id.in_(device_ids),
-            ThreadMessage.message_type == "otp_request"
+    import datetime
+    now = datetime.datetime.utcnow()
+    five_minutes_ago = now - datetime.timedelta(minutes=5)
+
+    messages = []
+    for d_id in device_ids:
+        latest = (
+            db.query(ThreadMessage)
+            .filter(ThreadMessage.device_id == d_id)
+            .order_by(ThreadMessage.created_at.desc())
+            .first()
         )
-        .order_by(ThreadMessage.created_at.desc())
-        .all()
-    )
+        if latest and latest.message_type in ("otp_request", "otp_request_ack"):
+            if latest.created_at >= five_minutes_ago:
+                messages.append(latest)
+
+    messages.sort(key=lambda m: m.created_at, reverse=True)
 
     result = []
     for msg in messages:
@@ -272,8 +283,7 @@ async def validate_stream(
     Tries the configured transport first, then falls back through TCP/UDP/HTTP.
     """
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_access(device, current_user)
 
     rtsp_url = build_rtsp_url(device)
     is_valid, transport_used = await validate_rtsp_with_fallback(
@@ -296,13 +306,12 @@ def send_action(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    import json
+    import random
     import datetime
 
     mode = action_data.mode
     device = get_device_by_id(db, device_id)
-    if device.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    check_device_access(device, current_user)
 
     if mode == "thread":
         # Generate OTP + send email
@@ -319,7 +328,6 @@ def send_action(
 
     elif mode == "no_threat":
         # Generate two 4-digit OTPs
-        import random
         otp1 = str(random.randint(1000, 9999))
         otp2 = str(random.randint(1000, 9999))
 
@@ -328,25 +336,57 @@ def send_action(
         from app.services.mqtt_service import publish_otp_to_device
         from app.models.message import ThreadMessage
 
+        u1_id = action_data.user_id_1
+        u2_id = action_data.user_id_2
+
+        # 1. Resolve User 1 (defaults to device's assigned_user if set, otherwise current_user)
+        if u1_id:
+            u1 = db.query(User).filter(User.id == u1_id).first()
+        elif device.assigned_user_id:
+            u1 = db.query(User).filter(User.id == device.assigned_user_id).first()
+        else:
+            u1 = current_user
+
+        if not u1:
+            u1 = current_user
+
+        # 2. Resolve User 2 (defaults to device's assigned_user_2 if set, otherwise another user in bank)
+        if u2_id:
+            u2 = db.query(User).filter(User.id == u2_id).first()
+        elif getattr(device, "assigned_user_2_id", None):
+            u2 = db.query(User).filter(User.id == device.assigned_user_2_id).first()
+        else:
+            bank_id = device.bank_id or current_user.bank_id
+            if bank_id:
+                u2 = db.query(User).filter(User.bank_id == bank_id, User.id != u1.id).first()
+            else:
+                u2 = db.query(User).filter(User.id != u1.id).first()
+
+        if not u2:
+            u2 = u1
+
+        # Validation check for bank compatibility
+        if current_user.role != "super_admin" and current_user.bank_id:
+            if u1.bank_id and u1.bank_id != current_user.bank_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User 1 must belong to your bank")
+            if u2.bank_id and u2.bank_id != current_user.bank_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User 2 must belong to your bank")
+
         expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
 
-        # 1st OTP: for current requesting user
+        # 1st OTP: for User 1
         db_otp1 = OTPCode(
             device_id=device.id,
-            user_id=current_user.id,
+            user_id=u1.id,
             code=otp1,
             expires_at=expires_at,
         )
         db.add(db_otp1)
 
-        # 2nd OTP: for another mapped user (first other user in DB, or fallback to current user)
-        mapped_user = db.query(User).filter(User.id != current_user.id).first()
-        if not mapped_user:
-            mapped_user = current_user
-
+        # 2nd OTP: for User 2
         db_otp2 = OTPCode(
             device_id=device.id,
-            user_id=mapped_user.id,
+            user_id=u2.id,
             code=otp2,
             expires_at=expires_at,
         )
@@ -356,24 +396,43 @@ def send_action(
         # Publish to MQTT topic /OTP/{device.name}
         mqtt_sent = publish_otp_to_device(device.name, otp1, otp2)
 
-        # Send emails
-        email_sent1 = send_otp_email(current_user.email, otp1, device.name)
+        # 1. Email Delivery (if enable_email is True)
+        email_sent1 = False
         email_sent2 = False
-        if mapped_user.id != current_user.id:
-            email_sent2 = send_otp_email(mapped_user.email, otp2, device.name)
+        if getattr(device, "enable_email", True) is not False:
+            email_sent1 = send_otp_email(u1.email, otp1, device.name, otp_label="1st Authorization OTP")
+            email_sent2 = send_otp_email(u2.email, otp2, device.name, otp_label="2nd Authorization OTP")
+
+        # 2. WhatsApp Delivery (if enable_whatsapp is True)
+        from app.services.whatsapp_service import send_whatsapp_otp
+        whatsapp_sent1 = False
+        whatsapp_sent2 = False
+        if getattr(device, "enable_whatsapp", True) is not False:
+            wa1 = getattr(device, "whatsapp_number_1", None) or getattr(u1, "whatsapp_number", None)
+            wa2 = getattr(device, "whatsapp_number_2", None) or getattr(u2, "whatsapp_number", None)
+            if wa1:
+                whatsapp_sent1 = send_whatsapp_otp(wa1, otp1, device.name, otp_label="1st Authorization OTP")
+            if wa2:
+                whatsapp_sent2 = send_whatsapp_otp(wa2, otp2, device.name, otp_label="2nd Authorization OTP")
 
         # Save ThreadMessage
         new_msg = ThreadMessage(
             device_id=device.id,
             sender_id=current_user.id,
-            content=f"No Threat authorized. 1st OTP: {otp1} (sent to {current_user.username}), 2nd OTP: {otp2} (sent to {mapped_user.username}). Published to MQTT `/OTP/{device.name}`.",
+            content=f"No Threat authorized. 1st OTP: {otp1} (sent to {u1.email}), 2nd OTP: {otp2} (sent to {u2.email}). Published to MQTT `/OTP/{device.name}`.",
             message_type="no_threat",
             payload={
                 "otp1": otp1,
                 "otp2": otp2,
-                "recipient1": current_user.username,
-                "recipient2": mapped_user.username,
-                "mqtt_topic": "/OTP/0000200043",
+                "recipient1": u1.username,
+                "recipient1_email": u1.email,
+                "recipient2": u2.username,
+                "recipient2_email": u2.email,
+                "email_sent1": email_sent1,
+                "email_sent2": email_sent2,
+                "whatsapp_sent1": whatsapp_sent1,
+                "whatsapp_sent2": whatsapp_sent2,
+                "mqtt_topic": f"/OTP/{device.name}",
                 "mqtt_published": mqtt_sent
             }
         )
@@ -383,12 +442,23 @@ def send_action(
         return {
             "success": True,
             "mode": "no_threat",
-            "message": f"NO THREAT authorized. 1st OTP ({otp1}) sent to {current_user.email}. 2nd OTP ({otp2}) sent to {mapped_user.email}. Published to MQTT `/OTP/{device.name}`.",
+            "message": f"NO THREAT authorized. 1st OTP ({otp1}) sent to {u1.email}. 2nd OTP ({otp2}) sent to {u2.email}. Published to MQTT `/OTP/{device.name}`.",
             "otp1": otp1,
             "otp2": otp2,
-            "mapped_user": mapped_user.username,
+            "user1_username": u1.username,
+            "user1_email": u1.email,
+            "user2_username": u2.username,
+            "user2_email": u2.email,
+            "enable_email": getattr(device, "enable_email", True),
+            "enable_whatsapp": getattr(device, "enable_whatsapp", True),
+            "email_sent1": email_sent1,
+            "email_sent2": email_sent2,
+            "whatsapp_sent1": whatsapp_sent1,
+            "whatsapp_sent2": whatsapp_sent2,
+            "mapped_user": u2.username,
             "mqtt_sent": mqtt_sent,
             "email_sent": email_sent1 or email_sent2,
+            "whatsapp_sent": whatsapp_sent1 or whatsapp_sent2,
         }
 
     else:
@@ -408,3 +478,96 @@ def send_action(
             "email_sent": False,
         }
 
+
+@router.get("/{device_id}/last-acknowledgment")
+def get_last_acknowledgment(
+    device_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    device = get_device_by_id(db, device_id)
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    
+    from app.models.message import ThreadMessage
+    last_msg = (
+        db.query(ThreadMessage)
+        .filter(
+            ThreadMessage.device_id == device_id,
+            ThreadMessage.message_type.in_(["otp_request_ack", "otp_request", "no_threat", "thread"])
+        )
+        .order_by(ThreadMessage.created_at.desc())
+        .first()
+    )
+    if not last_msg:
+        return {"has_ack": False, "message": "No recent OTP requests or acknowledgments."}
+    
+    # Sanitize payload to completely remove any OTP values
+    payload = dict(last_msg.payload or {})
+    payload.pop("otp1", None)
+    payload.pop("otp2", None)
+    payload.pop("otp_code", None)
+    payload.pop("code", None)
+
+    # Sanitize content to mask any OTP numbers (4 or 6 digits)
+    import re
+    content = last_msg.content
+    content = re.sub(r'\b\d{4}\b', '****', content)
+    content = re.sub(r'\b\d{6}\b', '******', content)
+
+    return {
+        "has_ack": True,
+        "id": last_msg.id,
+        "message_type": last_msg.message_type,
+        "content": content,
+        "payload": payload,
+        "created_at": last_msg.created_at.isoformat(),
+    }
+
+
+
+
+@router.get("/{device_id}/otp-report")
+def get_otp_report(
+    device_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    device = get_device_by_id(db, device_id)
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    
+    messages = (
+        db.query(ThreadMessage)
+        .filter(
+            ThreadMessage.device_id == device_id,
+            ThreadMessage.message_type.in_(["otp_request_ack", "otp_request", "no_threat", "thread"])
+        )
+        .order_by(ThreadMessage.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    
+    report_items = []
+    for m in messages:
+        payload = m.payload or {}
+        report_items.append({
+            "id": m.id,
+            "device_name": device.name,
+            "message_type": m.message_type,
+            "created_at": m.created_at.isoformat(),
+            "user1": payload.get("recipient1") or payload.get("user1_username") or "—",
+            "user2": payload.get("recipient2") or payload.get("user2_username") or "—",
+            "email_sent": payload.get("email_sent1") or payload.get("email_sent") or False,
+            "whatsapp_sent": payload.get("whatsapp_sent1") or payload.get("whatsapp_sent") or False,
+            "mqtt_topic": payload.get("mqtt_topic") or payload.get("topic") or f"/OTP/{device.name}",
+            "status": "Acknowledged" if m.message_type in ("otp_request_ack", "no_threat") else "Generated"
+        })
+    
+    return {
+        "device_id": device.id,
+        "device_name": device.name,
+        "location": device.location,
+        "total_records": len(report_items),
+        "report": report_items,
+    }

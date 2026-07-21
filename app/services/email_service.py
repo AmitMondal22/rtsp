@@ -13,14 +13,15 @@ from app.config import settings
 logger = logging.getLogger("email")
 
 
-def send_otp_email(to_email: str, otp_code: str, device_name: str) -> bool:
+def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: str = "OTP Code") -> bool:
     """
     Send an OTP code to the user's email address.
 
     Args:
         to_email: Recipient email address
-        otp_code: 6-digit OTP code
+        otp_code: 4 or 6 digit OTP code
         device_name: Name of the device for context
+        otp_label: Label for the OTP (e.g. "1st Authorization OTP", "2nd Authorization OTP")
 
     Returns:
         True if email was sent successfully, False otherwise
@@ -29,7 +30,9 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str) -> bool:
         logger.warning("SMTP not configured — skipping OTP email")
         return False
 
-    subject = f"🔐 IP Camera Manager — OTP Code for {device_name}"
+    import datetime
+    current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    subject = f"IP Camera Manager — {otp_label} for {device_name} - {current_time_str}"
 
     html_body = f"""
     <!DOCTYPE html>
@@ -41,6 +44,7 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str) -> bool:
             .container {{ max-width: 480px; margin: 0 auto; background: #1a2035; border-radius: 12px; padding: 32px; border: 1px solid #2a3250; }}
             .logo {{ text-align: center; margin-bottom: 24px; }}
             .logo h2 {{ color: #2979ff; margin: 0; font-size: 20px; }}
+            .badge {{ display: inline-block; background: rgba(41, 121, 255, 0.15); border: 1px solid #2979ff; color: #2979ff; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; margin-bottom: 12px; }}
             .otp-box {{ text-align: center; padding: 24px; background: #0d1321; border-radius: 8px; border: 2px dashed #2a3250; margin: 20px 0; }}
             .otp-code {{ font-size: 36px; font-weight: 800; letter-spacing: 10px; color: #2979ff; font-family: 'Courier New', monospace; }}
             .info {{ color: #8892a6; font-size: 14px; text-align: center; }}
@@ -51,12 +55,16 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str) -> bool:
     <body>
         <div class="container">
             <div class="logo">
-                <h2>📹 IP Camera Manager</h2>
+                <h2>IP Camera Manager</h2>
             </div>
-            <p class="info">Your OTP code for device <span class="device-name">{device_name}</span>:</p>
+            <div style="text-align: center;">
+                <span class="badge">{otp_label}</span>
+            </div>
+            <p class="info">Your {otp_label} for device <span class="device-name">{device_name}</span>:</p>
             <div class="otp-box">
                 <div class="otp-code">{otp_code}</div>
             </div>
+            <p class="info">Sent to: <strong>{to_email}</strong></p>
             <p class="info">This code is valid for <strong>5 minutes</strong>. Do not share it with anyone.</p>
             <div class="footer">
                 IP Camera Manager — Industrial Surveillance Platform<br>
@@ -73,7 +81,7 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str) -> bool:
     msg["To"] = to_email
 
     # Plain text fallback
-    text_body = f"Your OTP code for device '{device_name}' is: {otp_code}\nValid for 5 minutes."
+    text_body = f"[{otp_label}]\nYour code for device '{device_name}' is: {otp_code}\nRecipient: {to_email}\nValid for 5 minutes."
     msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
@@ -89,9 +97,9 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str) -> bool:
         server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
         server.sendmail(settings.SMTP_FROM_EMAIL, to_email, msg.as_string())
         server.quit()
-        logger.info("OTP email sent to %s for device '%s'", to_email, device_name)
+        logger.info("%s email sent to %s for device '%s'", otp_label, to_email, device_name)
         return True
 
     except Exception as e:
-        logger.error("Failed to send OTP email to %s: %s", to_email, e)
+        logger.error("Failed to send %s email to %s: %s", otp_label, to_email, e)
         return False

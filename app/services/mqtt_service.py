@@ -21,43 +21,45 @@ def on_message(client, userdata, msg):
     logger.info(f"MQTT Message received on topic: {msg.topic}")
     print(f"[MQTT] Message received on topic: {msg.topic}")
     try:
-        payload = msg.payload.decode("utf-8")
-        logger.info(f"MQTT Payload: {payload}")
-        print(f"[MQTT] Payload: {payload}")
-        data = json.loads(payload)
+        payload_str = msg.payload.decode("utf-8")
+        logger.info(f"MQTT Payload: {payload_str}")
+        print(f"[MQTT] Payload: {payload_str}")
         
-        if data.get("type") == "otp_request":
-            device_id = data.get("device_id")
-            time = data.get("time", "")
-            dt = data.get("dt", "")
-            relay = data.get("relay", 0)
-            
-            db = SessionLocal()
-            try:
-                # Find device by name or id
-                device = db.query(Device).filter(Device.name == device_id).first()
-                if not device:
-                    if device_id.isdigit():
-                        device = db.query(Device).filter(Device.id == int(device_id)).first()
-                if not device:
-                    # Fallback to the first device in the database so testing always works
-                    device = db.query(Device).first()
-                
-                if device:
-                    # Save request as a special thread message in the database
-                    new_msg = ThreadMessage(
-                        device_id=device.id,
-                        sender_id=device.owner_id or 1,
-                        content=f"OTP request received from device {device_id} (time: {time})",
-                        message_type="otp_request",
-                        payload=data,
-                    )
-                    db.add(new_msg)
-                    db.commit()
-                    logger.info(f"OTP request successfully saved for device ID {device.id}")
-                    print(f"[MQTT] OTP request successfully saved for device ID {device.id}")
-            finally:
-                db.close()
+        try:
+            data = json.loads(payload_str)
+        except Exception:
+            data = {"raw": payload_str}
+
+        db = SessionLocal()
+        try:
+            # Topic format example: /OTP/REQUEST/0000200043
+            parts = msg.topic.strip("/").split("/")
+            device_name = parts[-1] if len(parts) > 1 else "0000200043"
+
+            device = db.query(Device).filter(Device.name == device_name).first()
+            if not device:
+                device = db.query(Device).first()
+
+            if device:
+                ack_msg = ThreadMessage(
+                    device_id=device.id,
+                    sender_id=device.owner_id or 1,
+                    content=f"OTP Request Acknowledged from {device.name} via topic {msg.topic}",
+                    message_type="otp_request_ack",
+                    payload={
+                        "topic": msg.topic,
+                        "raw_payload": payload_str,
+                        "data": data,
+                        "status": "Acknowledged",
+                        "device_name": device.name,
+                    }
+                )
+                db.add(ack_msg)
+                db.commit()
+                logger.info(f"[MQTT] OTP Request Acknowledgment saved for device {device.name}")
+                print(f"[MQTT] OTP Request Acknowledgment saved for device {device.name}")
+        finally:
+            db.close()
     except Exception as e:
         logger.error(f"Error processing MQTT message: {e}")
         print(f"[MQTT] Error processing MQTT message: {e}")
@@ -94,19 +96,26 @@ def stop_mqtt_client():
         mqtt_client.disconnect()
         logger.info("MQTT Client disconnected")
 
-def publish_otp_to_device(device_name: str, otp1: str, otp2: str):
+def publish_otp_to_device(device_name: str, otp1: str, otp2: str = ""):
     global mqtt_client
     if not mqtt_client:
         logger.error("MQTT client not initialized")
         return False
     
-    topic = "/OTP/0000200043"
-    payload = f"*OTP, ,{otp1},{otp2}#"
+    clean_device_name = (device_name or "0000200043").strip().lstrip("/")
+    if clean_device_name.startswith("OTP/"):
+        topic = f"/{clean_device_name}"
+    else:
+        topic = f"/OTP/{clean_device_name}"
+    
+    val2 = otp2 if otp2 else otp1
+    payload = f"*OTP, ,{otp1},{val2}#"
     
     try:
         info = mqtt_client.publish(topic, payload, qos=1)
         info.wait_for_publish()
         logger.info(f"Published OTP packet to topic {topic}: {payload}")
+        print(f"[MQTT] Published OTP packet to topic {topic}: {payload}")
         return True
     except Exception as e:
         logger.error(f"Failed to publish MQTT message to topic {topic}: {e}")
