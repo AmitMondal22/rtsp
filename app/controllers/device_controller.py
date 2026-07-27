@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/devices", tags=["Devices"])
 
 
 def check_device_access(device: Device, user: User):
-    if user.role == "super_admin":
+    if user.role in ["super_admin", "admin"]:
         return
     if user.role == "bank_admin" and device.bank_id == user.bank_id:
         return
@@ -29,7 +29,7 @@ def check_device_access(device: Device, user: User):
 
 
 def check_device_admin_access(device: Device, user: User):
-    if user.role == "super_admin":
+    if user.role in ["super_admin", "admin"]:
         return
     if user.role == "bank_admin" and device.bank_id == user.bank_id:
         return
@@ -42,7 +42,7 @@ def create_device(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in ["super_admin", "bank_admin"]:
+    if current_user.role not in ["super_admin", "admin", "bank_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create devices",
@@ -64,11 +64,12 @@ def list_all_devices(
     current_user: User = Depends(get_current_user),
 ):
     """List all devices (admin view)."""
-    if current_user.role != "super_admin":
+    if current_user.role not in ["super_admin", "admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
-    return db.query(Device).all()
+    return get_user_devices(db, current_user)
+
 
 
 @router.get("/{device_id}", response_model=DeviceOut)

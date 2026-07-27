@@ -12,3 +12,5 @@ class Bank(Base):
 
     users = relationship("User", back_populates="bank")
     devices = relationship("Device", back_populates="bank")
+    branches = relationship("Branch", back_populates="bank", cascade="all, delete-orphan")
+

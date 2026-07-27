@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import asyncio
+import json
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Request, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
+from app.models.device import Device
 from app.models.message import ThreadMessage
 from app.schemas.device import DeviceStreamOut
 from app.schemas.message import ThreadMessageCreate, ThreadMessageOut
@@ -18,9 +22,10 @@ from app.services.camera_service import (
     verify_otp_service,
 )
 from app.streaming import validate_rtsp_with_fallback
-from app.streaming_opencv import generate_mjpeg_frames
+from app.streaming_opencv import generate_mjpeg_frames, OpenCVCamera
 from app.controllers.device_controller import check_device_access
 
+logger = logging.getLogger("camera_controller")
 router = APIRouter(prefix="/api/camera", tags=["Camera"])
 
 
@@ -31,7 +36,7 @@ def get_stream_url(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return stream URLs (RTSP, MJPEG, HLS) for a device."""
+    """Return stream URLs (RTSP, MJPEG, WebSocket) for a device."""
     device = get_device_by_id(db, device_id)
     check_device_access(device, current_user)
 
@@ -46,6 +51,70 @@ def get_stream_url(
     )
 
 
+# ── WebSocket Streaming (RTSP backend -> WebSocket frontend) ──
+@router.websocket("/{device_id}/ws")
+async def websocket_stream(
+    websocket: WebSocket,
+    device_id: int,
+    token: str = None,
+    db: Session = Depends(get_db),
+):
+    """
+    RTSP WebSocket live stream for a device.
+    Backend captures RTSP video via OpenCV and streams JPEG binary frames over WebSocket to frontend.
+    """
+    await websocket.accept()
+
+    # Authenticate token if provided
+    if token:
+        try:
+            from app.services.auth_service import verify_token
+            payload = verify_token(token)
+            if not payload:
+                await websocket.close(code=1008, reason="Unauthorized")
+                return
+        except Exception:
+            await websocket.close(code=1008, reason="Invalid token")
+            return
+
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        await websocket.close(code=1008, reason="Device not found")
+        return
+
+    rtsp_url = build_rtsp_url(device)
+    transport = device.transport or "tcp"
+
+    camera = OpenCVCamera(rtsp_url, transport=transport)
+    opened = await camera.open()
+    if not opened:
+        try:
+            await websocket.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream"}))
+        except Exception:
+            pass
+        await websocket.close(code=1011)
+        return
+
+    try:
+        while True:
+            jpeg_bytes = await camera.read_frame()
+            if jpeg_bytes is not None:
+                try:
+                    await websocket.send_bytes(jpeg_bytes)
+                except (WebSocketDisconnect, RuntimeError, ConnectionResetError, asyncio.CancelledError):
+                    logger.info(f"WebSocket client disconnected for device {device_id}. Stopping camera stream.")
+                    break
+            await asyncio.sleep(1.0 / 15.0)  # ~15 FPS
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for device {device_id}.")
+    except Exception as e:
+        logger.warning(f"WebSocket streaming closed for device {device_id}: {e}")
+    finally:
+        logger.info(f"Disconnecting backend RTSP camera resources for device {device_id}...")
+        await camera.release_async()
+
+
+
 # ── MJPEG Streaming (reliable fallback) ──
 @router.get("/{device_id}/mjpeg")
 def mjpeg_stream(
@@ -55,9 +124,7 @@ def mjpeg_stream(
 ):
     """
     MJPEG live stream for a device.
-
-    Returns multipart/x-mixed-replace JPEG frames — works in any browser
-    with a simple <img> tag. Much more reliable than WebRTC on Windows.
+    Returns multipart/x-mixed-replace JPEG frames.
     """
     device = get_device_by_id(db, device_id)
     check_device_access(device, current_user)
@@ -69,6 +136,7 @@ def mjpeg_stream(
         generate_mjpeg_frames(rtsp_url, transport=transport),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
+
 
 
 # ── Test RTSP Connectivity ──
@@ -339,22 +407,30 @@ def send_action(
         u1_id = action_data.user_id_1
         u2_id = action_data.user_id_2
 
-        # 1. Resolve User 1 (defaults to device's assigned_user if set, otherwise current_user)
+        # 1. Resolve User 1 (defaults to branch OTP1 user or device assigned_user)
         if u1_id:
             u1 = db.query(User).filter(User.id == u1_id).first()
         elif device.assigned_user_id:
             u1 = db.query(User).filter(User.id == device.assigned_user_id).first()
+        elif device.branch and device.branch.otp1_user_id:
+            u1 = db.query(User).filter(User.id == device.branch.otp1_user_id).first()
+        elif device.branch and device.branch.user1_id:
+            u1 = db.query(User).filter(User.id == device.branch.user1_id).first()
         else:
             u1 = current_user
 
         if not u1:
             u1 = current_user
 
-        # 2. Resolve User 2 (defaults to device's assigned_user_2 if set, otherwise another user in bank)
+        # 2. Resolve User 2 (defaults to branch OTP2 user or device assigned_user_2)
         if u2_id:
             u2 = db.query(User).filter(User.id == u2_id).first()
         elif getattr(device, "assigned_user_2_id", None):
             u2 = db.query(User).filter(User.id == device.assigned_user_2_id).first()
+        elif device.branch and device.branch.otp2_user_id:
+            u2 = db.query(User).filter(User.id == device.branch.otp2_user_id).first()
+        elif device.branch and device.branch.user2_id:
+            u2 = db.query(User).filter(User.id == device.branch.user2_id).first()
         else:
             bank_id = device.bank_id or current_user.bank_id
             if bank_id:
@@ -365,6 +441,15 @@ def send_action(
         if not u2:
             u2 = u1
 
+        # Check Branch OTP enable flags
+        enable_otp1 = True
+        enable_otp2 = True
+        if device.branch:
+            if getattr(device.branch, "enable_otp1", None) is False:
+                enable_otp1 = False
+            if getattr(device.branch, "enable_otp2", None) is False:
+                enable_otp2 = False
+
         # Validation check for bank compatibility
         if current_user.role != "super_admin" and current_user.bank_id:
             if u1.bank_id and u1.bank_id != current_user.bank_id:
@@ -374,45 +459,49 @@ def send_action(
 
         expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
 
-        # 1st OTP: for User 1
-        db_otp1 = OTPCode(
-            device_id=device.id,
-            user_id=u1.id,
-            code=otp1,
-            expires_at=expires_at,
-        )
-        db.add(db_otp1)
+        # 1st OTP: for User 1 if enabled
+        if enable_otp1:
+            db_otp1 = OTPCode(
+                device_id=device.id,
+                user_id=u1.id,
+                code=otp1,
+                expires_at=expires_at,
+            )
+            db.add(db_otp1)
 
-        # 2nd OTP: for User 2
-        db_otp2 = OTPCode(
-            device_id=device.id,
-            user_id=u2.id,
-            code=otp2,
-            expires_at=expires_at,
-        )
-        db.add(db_otp2)
+        # 2nd OTP: for User 2 if enabled
+        if enable_otp2:
+            db_otp2 = OTPCode(
+                device_id=device.id,
+                user_id=u2.id,
+                code=otp2,
+                expires_at=expires_at,
+            )
+            db.add(db_otp2)
         db.commit()
 
         # Publish to MQTT topic /OTP/{device.name}
-        mqtt_sent = publish_otp_to_device(device.name, otp1, otp2)
+        mqtt_sent = publish_otp_to_device(device.name, otp1 if enable_otp1 else "", otp2 if enable_otp2 else "")
 
-        # 1. Email Delivery (if enable_email is True)
+        # 1. Email Delivery (if enable_email is True and OTP enabled)
         email_sent1 = False
         email_sent2 = False
         if getattr(device, "enable_email", True) is not False:
-            email_sent1 = send_otp_email(u1.email, otp1, device.name, otp_label="1st Authorization OTP")
-            email_sent2 = send_otp_email(u2.email, otp2, device.name, otp_label="2nd Authorization OTP")
+            if enable_otp1:
+                email_sent1 = send_otp_email(u1.email, otp1, device.name, otp_label="1st Authorization OTP")
+            if enable_otp2:
+                email_sent2 = send_otp_email(u2.email, otp2, device.name, otp_label="2nd Authorization OTP")
 
-        # 2. WhatsApp Delivery (if enable_whatsapp is True)
+        # 2. WhatsApp Delivery (if enable_whatsapp is True and OTP enabled)
         from app.services.whatsapp_service import send_whatsapp_otp
         whatsapp_sent1 = False
         whatsapp_sent2 = False
         if getattr(device, "enable_whatsapp", True) is not False:
             wa1 = getattr(device, "whatsapp_number_1", None) or getattr(u1, "whatsapp_number", None)
             wa2 = getattr(device, "whatsapp_number_2", None) or getattr(u2, "whatsapp_number", None)
-            if wa1:
+            if wa1 and enable_otp1:
                 whatsapp_sent1 = send_whatsapp_otp(wa1, otp1, device.name, otp_label="1st Authorization OTP")
-            if wa2:
+            if wa2 and enable_otp2:
                 whatsapp_sent2 = send_whatsapp_otp(wa2, otp2, device.name, otp_label="2nd Authorization OTP")
 
         # Save ThreadMessage

@@ -2,6 +2,9 @@
 const state = {
     token: localStorage.getItem("token") || null,
     user: null,
+    banks: [],
+    branches: [],
+    users: [],
 };
 
 if (!state.token) {
@@ -77,11 +80,15 @@ async function initUser() {
         qs("#user-dropdown-role").textContent = state.user.role.toUpperCase();
 
         const navUsers = qs("#nav-users-link");
-        if (navUsers && (state.user.role === "super_admin" || state.user.role === "bank_admin")) {
-            navUsers.classList.remove("hidden");
+        const navBranches = qs("#nav-branches-link");
+        if (state.user.role === "super_admin" || state.user.role === "admin" || state.user.role === "bank_admin") {
+            if (navUsers) navUsers.classList.remove("hidden");
+            if (navBranches) navBranches.classList.remove("hidden");
         }
 
+        await loadUsersForDropdowns();
         await loadBanks();
+        await loadBranches();
     } catch (err) {
         console.error("User init failed:", err);
         localStorage.removeItem("token");
@@ -111,13 +118,55 @@ if (logoutBtn) {
     });
 }
 
-// Fetch & Render Banks List with Action Buttons
+// Load Users for dropdown selection
+async function loadUsersForDropdowns() {
+    try {
+        state.users = await api("/api/banks/users");
+    } catch (err) {
+        console.error("Failed to load users for branch assignment:", err);
+    }
+}
+
+// Populate User Dropdowns in Branch Modals
+function populateBranchUserDropdowns(prefix = "branch") {
+    const users = state.users || [];
+    const optionsHtml = '<option value="">— None —</option>' +
+        users.map(u => `<option value="${u.id}">${escapeHtml(u.username)} (${escapeHtml(u.email)})</option>`).join("");
+
+    ["user-1", "user-2", "user-3", "otp1-user", "otp2-user"].forEach(key => {
+        const el = qs(`#${prefix}-${key}`);
+        if (el) el.innerHTML = optionsHtml;
+    });
+}
+
+// Populate Bank Dropdowns in Branch Modals (with default fast bank auto-selection)
+function populateBranchBankDropdowns() {
+    const banks = state.banks || [];
+    const optionsHtml = '<option value="">— Select Bank —</option>' +
+        banks.map(b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join("");
+
+    const addBankSelect = qs("#branch-bank-id");
+    const editBankSelect = qs("#edit-branch-bank-id");
+
+    if (addBankSelect) {
+        addBankSelect.innerHTML = optionsHtml;
+        if (banks.length > 0) {
+            addBankSelect.value = banks[0].id;
+        }
+    }
+    if (editBankSelect) editBankSelect.innerHTML = optionsHtml;
+}
+
+// Fetch & Render Banks List
 async function loadBanks() {
     try {
         const banks = await api("/api/banks/");
+        state.banks = banks;
         const tbody = qs("#banks-table-body");
         const countBadge = qs("#banks-count");
         if (countBadge) countBadge.textContent = `${banks.length} banks`;
+
+        populateBranchBankDropdowns();
 
         if (!tbody) return;
         if (banks.length === 0) {
@@ -146,11 +195,68 @@ async function loadBanks() {
     }
 }
 
-// ── Modals Management ──
+// Fetch & Render Branches List
+async function loadBranches() {
+    try {
+        const branches = await api("/api/banks/branches");
+        state.branches = branches;
+        const tbody = qs("#branches-table-body");
+        const countBadge = qs("#branches-count");
+        if (countBadge) countBadge.textContent = `${branches.length} branches`;
+
+        if (!tbody) return;
+        if (branches.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-brand-muted">No registered branches found. Click "Add Branch" to create one.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = branches.map(b => {
+            const statusBadge = b.is_active
+                ? `<span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold uppercase">Active</span>`
+                : `<span class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-[10px] font-bold uppercase">Inactive</span>`;
+
+            const u1 = b.user1_name || "—";
+            const u2 = b.user2_name || "—";
+            const u3 = b.user3_name || "—";
+
+            const otp1 = b.otp1_user_name || u1;
+            const otp2 = b.otp2_user_name || u2;
+
+            return `
+                <tr class="hover:bg-brand-border/20 transition">
+                    <td class="py-3 pr-3 font-semibold text-brand-purple">${b.id}</td>
+                    <td class="py-3 pr-3 font-medium text-white">${escapeHtml(b.name)}</td>
+                    <td class="py-3 pr-3 text-slate-300">${escapeHtml(b.bank_name || "—")}</td>
+                    <td class="py-3 pr-3">${statusBadge}</td>
+                    <td class="py-3 pr-3 text-xs text-slate-300">
+                        <span class="block">1. ${escapeHtml(u1)}</span>
+                        <span class="block">2. ${escapeHtml(u2)}</span>
+                        <span class="block">3. ${escapeHtml(u3)}</span>
+                    </td>
+                    <td class="py-3 pr-3 text-xs">
+                        <span class="block text-emerald-400 font-semibold">1st OTP: ${escapeHtml(otp1)}</span>
+                        <span class="block text-brand-blue font-semibold">2nd OTP: ${escapeHtml(otp2)}</span>
+                    </td>
+                    <td class="py-3 text-right space-x-2">
+                        <button class="px-2.5 py-1 bg-brand-purple/20 hover:bg-brand-purple/30 text-brand-purple rounded text-xs transition" onclick="openEditBranchModal(${b.id})">
+                            <i class="bi bi-pencil-fill mr-1"></i> Edit
+                        </button>
+                        <button class="px-2.5 py-1 bg-brand-danger/20 hover:bg-brand-danger/30 text-brand-danger rounded text-xs transition" onclick="deleteBranch(${b.id}, '${escapeHtml(b.name).replace(/'/g, "\\'")}')">
+                            <i class="bi bi-trash-fill mr-1"></i> Delete
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        console.error("Failed to load branches:", err);
+    }
+}
+
+// ── Bank Modals Management ──
 const addBankModal = qs("#add-bank-modal");
 const editBankModal = qs("#edit-bank-modal");
 
-// Open/Close Add Bank Modal
 qs("#open-add-bank-modal")?.addEventListener("click", () => {
     qs("#add-bank-form").reset();
     qs("#add-bank-error").textContent = "";
@@ -159,7 +265,6 @@ qs("#open-add-bank-modal")?.addEventListener("click", () => {
 qs("#close-add-bank-modal")?.addEventListener("click", () => addBankModal.classList.add("hidden"));
 qs("#cancel-add-bank")?.addEventListener("click", () => addBankModal.classList.add("hidden"));
 
-// Handle Add Bank Submit
 qs("#add-bank-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const bankName = qs("#bank-name").value.trim();
@@ -181,7 +286,6 @@ qs("#add-bank-form")?.addEventListener("submit", async (e) => {
     }
 });
 
-// Open/Close Edit Bank Modal
 window.openEditBankModal = function(id, name) {
     qs("#edit-bank-id").value = id;
     qs("#edit-bank-name").value = name;
@@ -191,7 +295,6 @@ window.openEditBankModal = function(id, name) {
 qs("#close-edit-bank-modal")?.addEventListener("click", () => editBankModal.classList.add("hidden"));
 qs("#cancel-edit-bank")?.addEventListener("click", () => editBankModal.classList.add("hidden"));
 
-// Handle Edit Bank Submit
 qs("#edit-bank-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const bankId = qs("#edit-bank-id").value;
@@ -211,13 +314,141 @@ qs("#edit-bank-form")?.addEventListener("submit", async (e) => {
     }
 });
 
-// Delete Bank Handler
 window.deleteBank = async function(id, name) {
     if (!confirm(`Are you sure you want to delete bank "${name}"?`)) return;
     try {
         await api(`/api/banks/${id}`, { method: "DELETE" });
         showToast(`Bank "${name}" deleted successfully!`);
         await loadBanks();
+        await loadBranches();
+    } catch (err) {
+        showToast(err.message, "error");
+    }
+};
+
+// ── Branch Modals Management ──
+const addBranchModal = qs("#add-branch-modal");
+const editBranchModal = qs("#edit-branch-modal");
+
+qs("#open-add-branch-modal")?.addEventListener("click", () => {
+    qs("#add-branch-form").reset();
+    populateBranchUserDropdowns("branch");
+    qs("#add-branch-error").textContent = "";
+    addBranchModal.classList.remove("hidden");
+});
+qs("#close-add-branch-modal")?.addEventListener("click", () => addBranchModal.classList.add("hidden"));
+qs("#cancel-add-branch")?.addEventListener("click", () => addBranchModal.classList.add("hidden"));
+
+qs("#add-branch-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const bankId = parseInt(qs("#branch-bank-id").value);
+    const name = qs("#branch-name").value.trim();
+    const isActive = qs("#branch-is-active").checked;
+
+    const u1 = qs("#branch-user-1").value;
+    const u2 = qs("#branch-user-2").value;
+    const u3 = qs("#branch-user-3").value;
+
+    const otp1 = qs("#branch-otp1-user").value;
+    const otp2 = qs("#branch-otp2-user").value;
+
+    const errEl = qs("#add-branch-error");
+
+    const payload = {
+        bank_id: bankId,
+        name,
+        is_active: isActive,
+        user1_id: u1 ? parseInt(u1) : null,
+        user2_id: u2 ? parseInt(u2) : null,
+        user3_id: u3 ? parseInt(u3) : null,
+        otp1_user_id: otp1 ? parseInt(otp1) : null,
+        otp2_user_id: otp2 ? parseInt(otp2) : null,
+    };
+
+    try {
+        await api("/api/banks/branches", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        addBranchModal.classList.add("hidden");
+        showToast("Branch created successfully!");
+        await loadBranches();
+    } catch (err) {
+        errEl.textContent = err.message;
+    }
+});
+
+window.openEditBranchModal = function(id) {
+    const branch = (state.branches || []).find(b => b.id === id);
+    if (!branch) return;
+
+    qs("#edit-branch-id").value = branch.id;
+    qs("#edit-branch-bank-id").value = branch.bank_id;
+    qs("#edit-branch-name").value = branch.name;
+    qs("#edit-branch-is-active").checked = branch.is_active !== false;
+
+    populateBranchUserDropdowns("edit-branch");
+
+    qs("#edit-branch-user-1").value = branch.user1_id || "";
+    qs("#edit-branch-user-2").value = branch.user2_id || "";
+    qs("#edit-branch-user-3").value = branch.user3_id || "";
+
+    qs("#edit-branch-otp1-user").value = branch.otp1_user_id || "";
+    qs("#edit-branch-otp2-user").value = branch.otp2_user_id || "";
+
+    qs("#edit-branch-error").textContent = "";
+    editBranchModal.classList.remove("hidden");
+};
+
+qs("#close-edit-branch-modal")?.addEventListener("click", () => editBranchModal.classList.add("hidden"));
+qs("#cancel-edit-branch")?.addEventListener("click", () => editBranchModal.classList.add("hidden"));
+
+qs("#edit-branch-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const branchId = qs("#edit-branch-id").value;
+    const bankId = parseInt(qs("#edit-branch-bank-id").value);
+    const name = qs("#edit-branch-name").value.trim();
+    const isActive = qs("#edit-branch-is-active").checked;
+
+    const u1 = qs("#edit-branch-user-1").value;
+    const u2 = qs("#edit-branch-user-2").value;
+    const u3 = qs("#edit-branch-user-3").value;
+
+    const otp1 = qs("#edit-branch-otp1-user").value;
+    const otp2 = qs("#edit-branch-otp2-user").value;
+
+    const errEl = qs("#edit-branch-error");
+
+    const payload = {
+        bank_id: bankId,
+        name,
+        is_active: isActive,
+        user1_id: u1 ? parseInt(u1) : null,
+        user2_id: u2 ? parseInt(u2) : null,
+        user3_id: u3 ? parseInt(u3) : null,
+        otp1_user_id: otp1 ? parseInt(otp1) : null,
+        otp2_user_id: otp2 ? parseInt(otp2) : null,
+    };
+
+    try {
+        await api(`/api/banks/branches/${branchId}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+        });
+        editBranchModal.classList.add("hidden");
+        showToast("Branch updated successfully!");
+        await loadBranches();
+    } catch (err) {
+        errEl.textContent = err.message;
+    }
+});
+
+window.deleteBranch = async function(id, name) {
+    if (!confirm(`Are you sure you want to delete branch "${name}"?`)) return;
+    try {
+        await api(`/api/banks/branches/${id}`, { method: "DELETE" });
+        showToast(`Branch "${name}" deleted successfully!`);
+        await loadBranches();
     } catch (err) {
         showToast(err.message, "error");
     }

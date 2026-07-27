@@ -34,6 +34,9 @@ class BankUserCreate(BaseModel):
     password: str
     whatsapp_number: Optional[str] = None
     role: Optional[str] = "user"
+    bank_id: Optional[int] = None
+    branch_id: Optional[int] = None
+    is_active: bool = True
 
     @field_validator("password")
     @classmethod
@@ -51,8 +54,13 @@ class BankUserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    username: str
+    email: Optional[str] = None
+    username: Optional[str] = None
     password: str
+
+    @property
+    def identifier(self) -> str:
+        return (self.email or self.username or "").strip()
 
 
 class UserOut(BaseModel):
@@ -60,9 +68,12 @@ class UserOut(BaseModel):
     username: str
     email: str
     whatsapp_number: Optional[str] = None
-    is_active: bool
+    is_active: bool = True
     role: str
     bank_id: Optional[int] = None
+    branch_id: Optional[int] = None
+    bank_name: Optional[str] = None
+    branch_name: Optional[str] = None
     created_at: datetime.datetime
 
     model_config = {"from_attributes": True}
@@ -74,8 +85,10 @@ class UserUpdate(BaseModel):
     whatsapp_number: Optional[str] = None
     role: Optional[str] = None
     bank_id: Optional[int] = None
+    branch_id: Optional[int] = None
     password: Optional[str] = None
     is_active: Optional[bool] = None
+
 
 
 class UserDeviceOut(BaseModel):

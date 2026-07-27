@@ -15,7 +15,9 @@ def auto_migrate():
     with engine.connect() as conn:
         migrations = [
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(20);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id);",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS assigned_user_2_id INTEGER REFERENCES users(id);",
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id);",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS whatsapp_number_1 VARCHAR(20);",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS whatsapp_number_2 VARCHAR(20);",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS enable_email BOOLEAN DEFAULT TRUE;",
@@ -25,6 +27,13 @@ def auto_migrate():
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_version VARCHAR(50);",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS latitude VARCHAR(20);",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS longitude VARCHAR(20);",
+            "ALTER TABLE branches ADD COLUMN IF NOT EXISTS enable_otp1 BOOLEAN DEFAULT TRUE;",
+            "ALTER TABLE branches ADD COLUMN IF NOT EXISTS enable_otp2 BOOLEAN DEFAULT TRUE;",
+            "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;",
+            "ALTER TABLE users DROP CONSTRAINT IF EXISTS ix_users_username;",
+            "DROP INDEX IF EXISTS ix_users_username;",
+            "CREATE INDEX IF EXISTS ix_users_username ON users (username);",
+
         ]
         for query in migrations:
             try:
@@ -41,7 +50,7 @@ def seed_database():
 
     db = SessionLocal()
     try:
-        admin_user = db.query(User).filter(User.username == "admin").first()
+        admin_user = db.query(User).filter(User.email == "admin@ipcamera.local").first()
         if not admin_user:
             admin_user = User(
                 username="admin",
@@ -54,7 +63,7 @@ def seed_database():
             db.commit()
             print("[DB] Default admin user created.")
 
-        super_admin = db.query(User).filter(User.username == "superadmin").first()
+        super_admin = db.query(User).filter(User.email == "superadmin@example.com").first()
         if not super_admin:
             super_admin = User(
                 username="superadmin",
@@ -83,7 +92,7 @@ def seed_database():
 
         single_device = Device(
             name="0000200043",
-            device_type="ip_camera",
+            device_type="rtsp",
             host="192.168.29.114",
             port=554,
             username="admin1234",
@@ -190,6 +199,11 @@ def serve_banks():
 @app.get("/users")
 def serve_users():
     return FileResponse("templates/users.html")
+
+
+@app.get("/branches")
+def serve_branches():
+    return FileResponse("templates/branches.html")
 
 
 @app.get("/health")

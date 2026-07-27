@@ -9,7 +9,7 @@ class Device(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
-    device_type = Column(String(50), default="ip_camera")  # ip_camera, usb_camera, rtsp_camera, etc.
+    device_type = Column(String(50), default="rtsp")  # rtsp connection
 
     # RTSP / connection configuration
     rtsp_url = Column(String(500), nullable=True)
@@ -47,6 +47,7 @@ class Device(Base):
     # Owner / assignment
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     bank_id = Column(Integer, ForeignKey("banks.id"), nullable=True)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
     assigned_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     assigned_user_2_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -54,7 +55,9 @@ class Device(Base):
 
     owner = relationship("User", back_populates="devices", foreign_keys=[owner_id])
     bank = relationship("Bank", back_populates="devices")
+    branch = relationship("Branch", back_populates="devices")
     assigned_user = relationship("User", foreign_keys=[assigned_user_id])
     assigned_user_2 = relationship("User", foreign_keys=[assigned_user_2_id])
     messages = relationship("ThreadMessage", back_populates="device")
     otp_codes = relationship("OTPCode", back_populates="device")
+

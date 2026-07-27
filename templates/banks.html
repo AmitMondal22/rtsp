@@ -91,6 +91,10 @@
                 class="w-8 h-8 rounded flex items-center justify-center text-white bg-brand-blue active:scale-95 transition">
                 <i class="bi bi-bank text-base"></i>
             </a>
+            <a href="/branches" id="nav-branches-link" title="Branch Management"
+                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
+                <i class="bi bi-diagram-3-fill text-base"></i>
+            </a>
             <a href="/users" id="nav-users-link" title="User Management"
                 class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
                 <i class="bi bi-people text-base"></i>
@@ -101,13 +105,13 @@
         <main class="flex-1 bg-brand-darkBg overflow-y-auto p-6">
             <div class="max-w-5xl mx-auto space-y-6">
 
-                <!-- Page Header with Add Bank Button Modal Trigger -->
+                <!-- Page Header with Add Bank Modal -->
                 <div class="flex items-center justify-between border-b border-brand-border pb-4">
                     <div class="flex items-center space-x-3">
                         <i class="bi bi-bank2 text-brand-blue text-2xl"></i>
                         <div>
                             <h1 class="text-lg font-bold text-white">Bank Management</h1>
-                            <p class="text-xs text-brand-muted">Configure bank branches and administrative credentials</p>
+                            <p class="text-xs text-brand-muted">Configure registered banks and bank administrator accounts</p>
                         </div>
                     </div>
                     <button id="open-add-bank-modal" class="px-4 py-2 bg-brand-blue hover:bg-brand-blue/90 active:scale-95 transition text-white font-bold rounded-lg text-xs flex items-center shadow-lg">
@@ -149,17 +153,17 @@
         </main>
     </div>
 
-    <!-- ── Add Bank Modal ── -->
     <div id="add-bank-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg">
+        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg shrink-0">
                 <div class="flex items-center space-x-2">
                     <i class="bi bi-bank2 text-brand-blue text-lg"></i>
                     <h3 class="font-bold text-white text-sm">Add New Bank &amp; Admin</h3>
                 </div>
-                <button id="close-add-bank-modal" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+                <button id="close-add-bank-modal" type="button" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
             </div>
-            <form id="add-bank-form" class="p-5 space-y-4">
+            <form id="add-bank-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div class="p-5 space-y-4 overflow-y-auto flex-1">
                 <div>
                     <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Bank Name *</label>
                     <input id="bank-name" type="text"
@@ -185,26 +189,28 @@
                         placeholder="Min 6 characters" required />
                 </div>
                 <p id="add-bank-error" class="text-brand-danger text-xs"></p>
-                <div class="flex justify-end space-x-3 pt-2">
-                    <button type="button" id="cancel-add-bank" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Create Bank</button>
-                </div>
-            </form>
-        </div>
+            </div>
+            <div class="flex justify-end space-x-3 p-4 border-t border-brand-border bg-brand-darkBg shrink-0">
+                <button type="button" id="cancel-add-bank" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Create Bank</button>
+            </div>
+        </form>
+    </div>
     </div>
 
     <!-- ── Edit Bank Modal ── -->
     <div id="edit-bank-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg">
+        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg shrink-0">
                 <div class="flex items-center space-x-2">
                     <i class="bi bi-pencil-square text-brand-blue text-lg"></i>
                     <h3 class="font-bold text-white text-sm">Edit Bank</h3>
                 </div>
-                <button id="close-edit-bank-modal" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+                <button id="close-edit-bank-modal" type="button" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
             </div>
-            <form id="edit-bank-form" class="p-5 space-y-4">
+            <form id="edit-bank-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
                 <input type="hidden" id="edit-bank-id" />
+                <div class="p-5 space-y-4 overflow-y-auto flex-1">
                 <div>
                     <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Bank Name *</label>
                     <input id="edit-bank-name" type="text"
@@ -212,17 +218,19 @@
                         placeholder="e.g. Chase Bank" required />
                 </div>
                 <p id="edit-bank-error" class="text-brand-danger text-xs"></p>
-                <div class="flex justify-end space-x-3 pt-2">
-                    <button type="button" id="cancel-edit-bank" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Save Changes</button>
-                </div>
-            </form>
-        </div>
+            </div>
+            <div class="flex justify-end space-x-3 p-4 border-t border-brand-border bg-brand-darkBg shrink-0">
+                <button type="button" id="cancel-edit-bank" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Save Changes</button>
+            </div>
+        </form>
+    </div>
     </div>
 
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/static/banks.js?v=1.1"></script>
+    <script src="/static/banks.js?v=1.2"></script>
 </body>
 </html>
+

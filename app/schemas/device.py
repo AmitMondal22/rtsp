@@ -6,7 +6,7 @@ from typing import Optional, Any
 
 class DeviceCreate(BaseModel):
     name: str
-    device_type: str = "ip_camera"
+    device_type: str = "rtsp"
     # Connection details
     host: Optional[str] = None
     port: int = 554
@@ -27,6 +27,7 @@ class DeviceCreate(BaseModel):
     # Extra
     extra_config: Optional[dict[str, Any]] = None
     bank_id: Optional[int] = None
+    branch_id: Optional[int] = None
     assigned_user_id: Optional[int] = None
     assigned_user_2_id: Optional[int] = None
     whatsapp_number_1: Optional[str] = None
@@ -48,11 +49,13 @@ class DeviceCreate(BaseModel):
     def validate_rtsp_url(cls, v: Optional[str]) -> Optional[str]:
         if not v:
             return v
-        v = re.sub(r'^rtsp:\d+//', 'rtsp://', v.strip())
-        if not v.startswith("rtsp://") and not v.isdigit():
-            raise ValueError("RTSP URL must start with rtsp:// or be a camera index (digit)")
-        if not v.isdigit():
-            v = re.sub(r'(://[^@/]*@)?([^/:]+):(/)', r'\1\2:554\3', v)
+        v = re.sub(r'^rtsp:\d+//', 'rtsp://', v.strip(), flags=re.IGNORECASE)
+        if not v.lower().startswith("rtsp://") and not v.lower().startswith("rtsps://"):
+            if not v.startswith("http://") and not v.startswith("https://"):
+                v = "rtsp://" + v
+            else:
+                raise ValueError("RTSP URL must start with rtsp:// or rtsps://")
+        v = re.sub(r'(://[^@/]*@)?([^/:]+):(/)', r'\1\2:554\3', v)
         return v
 
 
@@ -72,6 +75,7 @@ class DeviceUpdate(BaseModel):
     is_recording: Optional[bool] = None
     extra_config: Optional[dict[str, Any]] = None
     bank_id: Optional[int] = None
+    branch_id: Optional[int] = None
     assigned_user_id: Optional[int] = None
     assigned_user_2_id: Optional[int] = None
     whatsapp_number_1: Optional[str] = None
@@ -95,11 +99,13 @@ class DeviceUpdate(BaseModel):
     def validate_rtsp_url(cls, v: Optional[str]) -> Optional[str]:
         if not v:
             return v
-        if not v.startswith("rtsp://") and not v.isdigit():
-            raise ValueError("RTSP URL must start with rtsp:// or be a camera index (digit)")
-        # Auto-fix genuinely empty ports only
-        if not v.isdigit():
-            v = re.sub(r'(://[^@/]*@)?([^/:]+):(/)', r'\1\2:554\3', v)
+        v = re.sub(r'^rtsp:\d+//', 'rtsp://', v.strip(), flags=re.IGNORECASE)
+        if not v.lower().startswith("rtsp://") and not v.lower().startswith("rtsps://"):
+            if not v.startswith("http://") and not v.startswith("https://"):
+                v = "rtsp://" + v
+            else:
+                raise ValueError("RTSP URL must start with rtsp:// or rtsps://")
+        v = re.sub(r'(://[^@/]*@)?([^/:]+):(/)', r'\1\2:554\3', v)
         return v
 
 
@@ -129,6 +135,9 @@ class DeviceOut(BaseModel):
     extra_config: Optional[dict[str, Any]] = None
     owner_id: Optional[int] = None
     bank_id: Optional[int] = None
+    branch_id: Optional[int] = None
+    bank_name: Optional[str] = None
+    branch_name: Optional[str] = None
     assigned_user_id: Optional[int] = None
     assigned_user_2_id: Optional[int] = None
     whatsapp_number_1: Optional[str] = None
@@ -138,6 +147,7 @@ class DeviceOut(BaseModel):
     created_at: datetime.datetime
 
     model_config = {"from_attributes": True}
+
 
 
 class DeviceStreamOut(BaseModel):

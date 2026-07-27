@@ -88,7 +88,15 @@ def generate_otp_service(db: Session, device_id: int, user: User) -> dict:
     check_device_access(device, user)
 
     target_user = user
-    if device.assigned_user_id:
+    if device.branch and device.branch.otp1_user_id:
+        b_u1 = db.query(User).filter(User.id == device.branch.otp1_user_id).first()
+        if b_u1:
+            target_user = b_u1
+    elif device.branch and device.branch.user1_id:
+        b_u1 = db.query(User).filter(User.id == device.branch.user1_id).first()
+        if b_u1:
+            target_user = b_u1
+    elif device.assigned_user_id:
         assigned_u = db.query(User).filter(User.id == device.assigned_user_id).first()
         if assigned_u:
             target_user = assigned_u

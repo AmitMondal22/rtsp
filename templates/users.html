@@ -91,6 +91,10 @@
                 class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
                 <i class="bi bi-bank text-base"></i>
             </a>
+            <a href="/branches" id="nav-branches-link" title="Branch Management"
+                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
+                <i class="bi bi-diagram-3-fill text-base"></i>
+            </a>
             <a href="/users" title="User Management"
                 class="w-8 h-8 rounded flex items-center justify-center text-white bg-brand-blue active:scale-95 transition">
                 <i class="bi bi-people text-base"></i>
@@ -128,18 +132,19 @@
                         <table class="w-full text-left text-sm border-collapse">
                             <thead>
                                 <tr class="border-b border-brand-border text-brand-muted text-xs uppercase tracking-wider">
-                                    <th class="py-3 pr-4 font-bold w-16">ID</th>
-                                    <th class="py-3 pr-4 font-bold">Username</th>
-                                    <th class="py-3 pr-4 font-bold">Email</th>
-                                    <th class="py-3 pr-4 font-bold">WhatsApp</th>
-                                    <th class="py-3 pr-4 font-bold">Bank</th>
-                                    <th class="py-3 pr-4 font-bold">Role</th>
+                                    <th class="py-3 pr-3 font-bold w-12">ID</th>
+                                    <th class="py-3 pr-3 font-bold">Username</th>
+                                    <th class="py-3 pr-3 font-bold">Email</th>
+                                    <th class="py-3 pr-3 font-bold">WhatsApp</th>
+                                    <th class="py-3 pr-3 font-bold">Bank &amp; Branch</th>
+                                    <th class="py-3 pr-3 font-bold">Role</th>
+                                    <th class="py-3 pr-3 font-bold">Status</th>
                                     <th class="py-3 font-bold text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="users-table-body" class="divide-y divide-brand-border/40 text-slate-300">
                                 <tr>
-                                    <td colspan="7" class="py-8 text-center text-brand-muted text-xs">
+                                    <td colspan="8" class="py-8 text-center text-brand-muted text-xs">
                                         <i class="bi bi-hourglass-split mr-2 animate-spin"></i> Loading users...
                                     </td>
                                 </tr>
@@ -152,17 +157,17 @@
         </main>
     </div>
 
-    <!-- ── Add User Modal ── -->
     <div id="add-user-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg">
+        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg shrink-0">
                 <div class="flex items-center space-x-2">
                     <i class="bi bi-person-plus text-brand-blue text-lg"></i>
                     <h3 class="font-bold text-white text-sm">Register New User</h3>
                 </div>
-                <button id="close-add-user-modal" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+                <button id="close-add-user-modal" type="button" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
             </div>
-            <form id="add-user-form" class="p-5 space-y-4">
+            <form id="add-user-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div class="p-5 space-y-4 overflow-y-auto flex-1">
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Username *</label>
@@ -203,34 +208,51 @@
                             <option value="">— Primary Bank —</option>
                         </select>
                     </div>
+                    <div id="user-branch-wrapper">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Branch</label>
+                        <select id="user-branch-id"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 focus:outline-none focus:border-brand-blue">
+                            <option value="">— Select Branch —</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Password *</label>
                         <input id="user-password" type="password"
                             class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
                             placeholder="Min 6 characters" required />
                     </div>
+                    <div class="flex items-center pt-5">
+                        <label class="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
+                            <input id="user-is-active" type="checkbox" class="rounded border-brand-border text-brand-blue focus:ring-0" checked />
+                            <span class="font-semibold text-emerald-400">Account Active</span>
+                        </label>
+                    </div>
                 </div>
                 <p id="add-user-error" class="text-brand-danger text-xs"></p>
-                <div class="flex justify-end space-x-3 pt-2">
-                    <button type="button" id="cancel-add-user" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Register User</button>
-                </div>
-            </form>
-        </div>
+            </div>
+            <div class="flex justify-end space-x-3 p-4 border-t border-brand-border bg-brand-darkBg shrink-0">
+                <button type="button" id="cancel-add-user" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Register User</button>
+            </div>
+        </form>
+    </div>
     </div>
 
     <!-- ── Edit User Modal ── -->
     <div id="edit-user-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg">
+        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg shrink-0">
                 <div class="flex items-center space-x-2">
                     <i class="bi bi-pencil-square text-brand-blue text-lg"></i>
                     <h3 class="font-bold text-white text-sm">Edit User Info</h3>
                 </div>
-                <button id="close-edit-user-modal" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+                <button id="close-edit-user-modal" type="button" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
             </div>
-            <form id="edit-user-form" class="p-5 space-y-4">
+            <form id="edit-user-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
                 <input type="hidden" id="edit-user-id" />
+                <div class="p-5 space-y-4 overflow-y-auto flex-1">
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Username *</label>
@@ -271,25 +293,42 @@
                             <option value="">— Primary Bank —</option>
                         </select>
                     </div>
+                    <div id="edit-user-branch-wrapper">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Branch</label>
+                        <select id="edit-user-branch-id"
+                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 focus:outline-none focus:border-brand-blue">
+                            <option value="">— Select Branch —</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">New Password (optional)</label>
                         <input id="edit-user-password" type="password"
                             class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
                             placeholder="Leave blank to keep current" />
                     </div>
+                    <div class="flex items-center pt-5">
+                        <label class="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
+                            <input id="edit-user-is-active" type="checkbox" class="rounded border-brand-border text-brand-blue focus:ring-0" />
+                            <span class="font-semibold text-emerald-400">Account Active</span>
+                        </label>
+                    </div>
                 </div>
                 <p id="edit-user-error" class="text-brand-danger text-xs"></p>
-                <div class="flex justify-end space-x-3 pt-2">
-                    <button type="button" id="cancel-edit-user" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Save Changes</button>
-                </div>
-            </form>
-        </div>
+            </div>
+            <div class="flex justify-end space-x-3 p-4 border-t border-brand-border bg-brand-darkBg shrink-0">
+                <button type="button" id="cancel-edit-user" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Save Changes</button>
+            </div>
+        </form>
+    </div>
     </div>
 
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/static/users.js?v=1.1"></script>
+    <script src="/static/users.js?v=1.2"></script>
 </body>
 </html>
+

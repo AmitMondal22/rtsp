@@ -121,6 +121,15 @@ class OpenCVCamera:
         """Release the camera resource."""
         self._release_sync()
 
+    async def release_async(self) -> None:
+        """Release the camera resource asynchronously in thread pool."""
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._release_sync)
+        except Exception:
+            self._release_sync()
+
+
     @property
     def is_opened(self) -> bool:
         return self._cap is not None and self._cap.isOpened()

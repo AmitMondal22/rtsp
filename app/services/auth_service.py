@@ -72,21 +72,21 @@ def get_current_user(
 
 
 def register_user_service(db: Session, username: str, email: str, password: str) -> User:
-    existing = db.query(User).filter(
-        (User.username == username) | (User.email == email)
-    ).first()
+    from sqlalchemy import func
+    clean_email = email.strip().lower()
+    existing = db.query(User).filter(func.lower(User.email) == clean_email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username or email already exists",
+            detail="Email address already registered",
         )
     from app.models.bank import Bank
     first_bank = db.query(Bank).first()
     target_bank_id = first_bank.id if first_bank else None
 
     new_user = User(
-        username=username,
-        email=email,
+        username=username.strip(),
+        email=clean_email,
         hashed_password=hash_password(password),
         bank_id=target_bank_id,
         role="user",
@@ -97,11 +97,26 @@ def register_user_service(db: Session, username: str, email: str, password: str)
     return new_user
 
 
-def login_service(db: Session, username: str, password: str) -> str:
-    db_user = db.query(User).filter(User.username == username).first()
+def login_service(db: Session, identifier: str, password: str) -> str:
+    if not identifier:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email or username is required for login",
+        )
+    from sqlalchemy import func
+    clean_id = identifier.strip().lower()
+    db_user = db.query(User).filter(func.lower(User.username) == clean_id).first()
+    if not db_user:
+        db_user = db.query(User).filter(func.lower(User.email) == clean_id).first()
+
     if not db_user or not verify_password(password, db_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password",
+            detail="Invalid username/email or password",
+        )
+    if not db_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User account is inactive",
         )
     return create_access_token(data={"sub": db_user.id})

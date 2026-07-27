@@ -90,22 +90,100 @@ function setStreamStatus(text, type) {
     el.className = "stream-status " + (type || "info");
 }
 
-// ── MJPEG Streaming (Exclusive) ──
-function startMjpegStream(deviceId) {
+let activeWebSocket = null;
+let currentBlobUrl = null;
+
+// ── WebSocket RTSP Streaming (Primary) ──
+function startWebSocketStream(deviceId) {
     stopAllStreams();
+    currentStreamMode = "websocket";
+
+    const mjpegEl = qs("#camera-feed-mjpeg");
+    if (!mjpegEl) return;
+
+    mjpegEl.style.display = "block";
+    setStreamStatus("Connecting WebSocket...", "info");
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/api/camera/${deviceId}/ws${state.token ? `?token=${state.token}` : ""}`;
+
+    try {
+        activeWebSocket = new WebSocket(wsUrl);
+        activeWebSocket.binaryType = "blob";
+
+        activeWebSocket.onopen = () => {
+            setStreamStatus("Live (WebSocket)", "live");
+            startCameraTimestamp();
+        };
+
+        activeWebSocket.onmessage = (event) => {
+            if (typeof event.data === "string") {
+                try {
+                    const parsed = JSON.parse(event.data);
+                    if (parsed.error) {
+                        setStreamStatus("WS Error: " + parsed.error, "error");
+                        startMjpegStream(deviceId);
+                    }
+                } catch (e) {}
+                return;
+            }
+
+            if (event.data instanceof Blob) {
+                const newUrl = URL.createObjectURL(event.data);
+                mjpegEl.src = newUrl;
+
+                if (currentBlobUrl) {
+                    URL.revokeObjectURL(currentBlobUrl);
+                }
+                currentBlobUrl = newUrl;
+                setStreamStatus("Live (WebSocket)", "live");
+            }
+        };
+
+        activeWebSocket.onerror = (err) => {
+            console.warn("WebSocket stream error, fallback to MJPEG:", err);
+            startMjpegStream(deviceId);
+        };
+
+        activeWebSocket.onclose = () => {
+            if (currentStreamMode === "websocket") {
+                startMjpegStream(deviceId);
+            }
+        };
+    } catch (e) {
+        console.error("Failed to initialize WebSocket stream:", e);
+        startMjpegStream(deviceId);
+    }
+}
+
+function stopWebSocket() {
+    if (activeWebSocket) {
+        try {
+            activeWebSocket.close();
+        } catch (e) {}
+        activeWebSocket = null;
+    }
+    if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl = null;
+    }
+}
+
+// ── MJPEG Streaming (Fallback) ──
+function startMjpegStream(deviceId) {
+    stopWebSocket();
     currentStreamMode = "mjpeg";
 
     const mjpegEl = qs("#camera-feed-mjpeg");
 
     if (mjpegEl) {
         mjpegEl.style.display = "block";
-        setStreamStatus("Connecting...", "info");
+        setStreamStatus("Connecting MJPEG...", "info");
 
-        // Set MJPEG source — browser handles the multipart streaming automatically, pass token as query param
         mjpegEl.src = `/api/camera/${deviceId}/mjpeg${state.token ? `?token=${state.token}` : ""}`;
 
         mjpegEl.onload = () => {
-            setStreamStatus("Live", "live");
+            setStreamStatus("Live (MJPEG)", "live");
         };
 
         mjpegEl.onerror = () => {
@@ -124,10 +202,13 @@ function stopMjpeg() {
 }
 
 function stopAllStreams() {
+    stopWebSocket();
     stopMjpeg();
+    stopCameraTimestamp();
     currentStreamMode = null;
     setStreamStatus("Stopped", "info");
 }
+
 
 // Poll OTP requests every 5 seconds
 let otpRequestsInterval = null;
@@ -253,22 +334,26 @@ async function init() {
 
     // Show/hide navigation tabs based on roles
     const banksTab = qs("#nav-banks-tab");
+    const branchesTab = qs("#nav-branches-tab");
     const usersTab = qs("#nav-users-tab");
     const addDeviceBtn = qs("#add-device-btn");
     const deviceAssignCol = qs("#device-assign-user") ? qs("#device-assign-user").closest(".col-md-4") : null;
 
-    if (state.user.role === "super_admin") {
+    if (state.user.role === "super_admin" || state.user.role === "admin") {
         if (banksTab) banksTab.classList.remove("hidden");
+        if (branchesTab) branchesTab.classList.remove("hidden");
         if (usersTab) usersTab.classList.remove("hidden");
         if (addDeviceBtn) addDeviceBtn.classList.remove("hidden");
         if (deviceAssignCol) deviceAssignCol.classList.remove("hidden");
-    } else if (state.user.role === "bank_admin" || state.user.role === "admin") {
+    } else if (state.user.role === "bank_admin") {
         if (banksTab) banksTab.classList.add("hidden");
+        if (branchesTab) branchesTab.classList.remove("hidden");
         if (usersTab) usersTab.classList.remove("hidden");
         if (addDeviceBtn) addDeviceBtn.classList.remove("hidden");
         if (deviceAssignCol) deviceAssignCol.classList.remove("hidden");
     } else {
         if (banksTab) banksTab.classList.add("hidden");
+        if (branchesTab) branchesTab.classList.add("hidden");
         if (usersTab) usersTab.classList.add("hidden");
         if (addDeviceBtn) addDeviceBtn.classList.add("hidden");
         if (deviceAssignCol) deviceAssignCol.classList.add("hidden");
@@ -361,20 +446,15 @@ function renderDeviceList() {
                 : "bg-transparent text-[#a0a5b0] hover:bg-[#23242c] hover:text-white"
         }`;
         
-        const typeIcon = device.device_type === "usb_camera" ? "bi-usb" : "bi-camera-video-fill";
-        const statusColor = device.is_online ? "text-brand-success animate-pulse" : "text-brand-danger";
-        
+        const typeIcon = "bi-camera-video-fill";
         item.innerHTML = `
             <div class="flex items-center justify-between">
                 <div class="flex items-center space-x-2 font-medium text-xs">
-                    <i class="bi ${typeIcon} ${isActive ? "text-white" : "text-brand-muted group-hover:text-slate-200"}"></i>
+                    <i class="bi ${typeIcon}"></i>
                     <span>${escapeHtml(device.name)}</span>
                 </div>
-                <span class="${statusColor} text-[8px]" title="${device.is_online ? 'Online' : 'Offline'}">
-                    <i class="bi bi-circle-fill"></i>
-                </span>
             </div>
-            <div class="flex items-center justify-between text-[10px] ${isActive ? "text-white/70" : "text-brand-muted"} font-mono">
+            <div class="flex items-center justify-between text-[10px]  font-mono">
                 <span>${escapeHtml(device.location || "No location")}</span>
                 <span>${escapeHtml(device.host || "127.0.0.1")}</span>
             </div>
@@ -444,15 +524,14 @@ function showDeviceView(device) {
     qs("#view-device-status").textContent = online ? "● Online" : "○ Offline";
     qs("#view-device-status").className = `status-badge ${online ? "online" : "offline"}`;
 
-    qs("#view-device-location").textContent = `📍 ${device.location || "No location set"}`;
+    qs("#view-device-location").textContent = ` ${device.location || "No location set"}`;
     qs("#view-device-rtsp").textContent = `${device.rtsp_url || "Auto-configured"}`;
 
     // Device config bar
     renderDeviceConfig(device);
 
-    // Start MJPEG streaming (primary, reliable)
-    startMjpegStream(device.id);
-    startCameraTimestamp();
+    // Start WebSocket RTSP streaming (with MJPEG fallback)
+    startWebSocketStream(device.id);
 
     // Fetch and render last request acknowledgment
     loadLastAcknowledgment(device.id);
@@ -461,6 +540,7 @@ function showDeviceView(device) {
     qs("#action-result").classList.add("hidden");
 }
 
+
 function renderDeviceConfig(device) {
     const bar = qs("#device-config-display");
     const configs = [
@@ -468,7 +548,7 @@ function renderDeviceConfig(device) {
         { label: "Port", value: device.port || 554 },
         { label: "Stream", value: device.stream_path || "/stream1" },
         { label: "Transport", value: device.transport || "tcp" },
-        { label: "Type", value: device.device_type || "ip_camera" },
+        { label: "Type", value: "RTSP Connection" },
     ];
 
     bar.innerHTML = configs.map(c =>
@@ -480,88 +560,79 @@ function renderDeviceConfig(device) {
 let editingDeviceId = null;
 
 function updateFormFields() {
-    const deviceType = qs("#device-type").value;
     const manualCard = qs("#manual-rtsp-card");
     const rtspLabel = qs("#device-rtsp-label");
     const rtspInput = qs("#device-rtsp");
 
-    if (deviceType === "usb_camera") {
-        if (manualCard) manualCard.classList.add("hidden");
-        if (rtspLabel) rtspLabel.textContent = "CAMERA INDEX (e.g. 0)";
-        if (rtspInput) rtspInput.placeholder = "e.g. 0, 1, 2";
-    } else {
-        if (manualCard) manualCard.classList.remove("hidden");
-        if (rtspLabel) rtspLabel.textContent = "FULL RTSP URL (optional)";
-        if (rtspInput) rtspInput.placeholder = "rtsp://username:password@192.168.1.100:554/stream1";
-    }
+    if (manualCard) manualCard.classList.remove("hidden");
+    if (rtspLabel) rtspLabel.textContent = "RTSP STREAM URL *";
+    if (rtspInput) rtspInput.placeholder = "rtsp://username:password@192.168.1.100:554/stream1";
 }
 
 // Listen for device connection type changes
 qs("#device-type").addEventListener("change", updateFormFields);
 
-// ── Auto-parse RTSP URL into form fields ──
+// ── Auto-parse RTSP URL into components ──
 function parseRtspUrl(url) {
-    if (!url || !url.startsWith("rtsp://")) return null;
+    if (!url || !url.toLowerCase().startsWith("rtsp://")) return null;
     try {
-        // Parse: rtsp://[username:password@]host[:port][/path]
-        const urlObj = new URL(url.replace("rtsp://", "http://"));
+        const httpUrl = url.replace(/^rtsp:\/\//i, "http://");
+        const urlObj = new URL(httpUrl);
         return {
             host: urlObj.hostname || null,
             port: urlObj.port ? parseInt(urlObj.port) : 554,
             username: urlObj.username ? decodeURIComponent(urlObj.username) : null,
             password: urlObj.password ? decodeURIComponent(urlObj.password) : null,
-            stream_path: urlObj.pathname || "/stream1",
+            stream_path: (urlObj.pathname || "/stream1") + (urlObj.search || ""),
         };
     } catch (e) {
         return null;
     }
 }
 
-// Auto-populate manual fields when RTSP URL is entered
-qs("#device-rtsp").addEventListener("blur", () => {
-    const rtspVal = qs("#device-rtsp").value.trim();
-    if (!rtspVal) return;
-    const parsed = parseRtspUrl(rtspVal);
-    if (!parsed) return;
+// Auto-populate helper
+async function loadBanksAndBranchesForDeviceForm() {
+    try {
+        state.banks = await api("/api/banks/");
+        state.branches = await api("/api/banks/branches");
 
-    // Only fill in empty fields — don't overwrite user-entered data
-    if (!qs("#device-host").value.trim() && parsed.host) {
-        qs("#device-host").value = parsed.host;
+        const bankSelect = qs("#device-bank-id");
+        if (bankSelect) {
+            bankSelect.innerHTML = '<option value="">— Select Bank —</option>' +
+                state.banks.map(b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join("");
+        }
+        populateBranchSelectForDeviceForm();
+    } catch (e) {
+        console.error("Failed to load banks and branches for device form:", e);
     }
-    if (qs("#device-port").value === "554" && parsed.port && parsed.port !== 554) {
-        qs("#device-port").value = parsed.port;
-    } else if (parsed.port) {
-        qs("#device-port").value = parsed.port;
+}
+
+function populateBranchSelectForDeviceForm(bankId = null) {
+    const branchSelect = qs("#device-branch-id");
+    if (!branchSelect) return;
+
+    let filtered = state.branches || [];
+    if (bankId) {
+        filtered = filtered.filter(b => b.bank_id === parseInt(bankId));
     }
-    if (!qs("#device-rtsp-user").value.trim() && parsed.username) {
-        qs("#device-rtsp-user").value = parsed.username;
-    }
-    if (!qs("#device-rtsp-pass").value.trim() && parsed.password) {
-        qs("#device-rtsp-pass").value = parsed.password;
-    }
-    if ((qs("#device-stream-path").value === "/stream1" || !qs("#device-stream-path").value.trim()) && parsed.stream_path) {
-        qs("#device-stream-path").value = parsed.stream_path;
-    }
+
+    branchSelect.innerHTML = '<option value="">— Select Branch —</option>' +
+        filtered.map(b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join("");
+}
+
+qs("#device-bank-id")?.addEventListener("change", (e) => {
+    populateBranchSelectForDeviceForm(e.target.value);
 });
 
 async function resetDeviceForm() {
-    if (!state.bankUsers || state.bankUsers.length === 0) {
-        await loadBankUsers();
-    } else {
-        populateUserSelectors();
-    }
+    await loadBanksAndBranchesForDeviceForm();
+
     qs("#device-name").value = "";
     qs("#device-rtsp").value = "";
-    qs("#device-host").value = "";
-    qs("#device-port").value = "554";
-    qs("#device-rtsp-user").value = "";
-    qs("#device-rtsp-pass").value = "";
-    qs("#device-stream-path").value = "/stream1";
-    qs("#device-transport").value = "tcp";
     qs("#device-location").value = "";
     qs("#device-manufacturer").value = "";
-    if (qs("#device-assign-user")) qs("#device-assign-user").value = "";
-    if (qs("#device-assign-user-2")) qs("#device-assign-user-2").value = "";
+    if (qs("#device-bank-id")) qs("#device-bank-id").value = "";
+    if (qs("#device-branch-id")) qs("#device-branch-id").value = "";
     if (qs("#device-enable-email")) qs("#device-enable-email").checked = true;
     if (qs("#device-enable-whatsapp")) qs("#device-enable-whatsapp").checked = true;
     qs("#device-error").textContent = "";
@@ -572,24 +643,16 @@ async function resetDeviceForm() {
 }
 
 async function populateDeviceForm(device) {
-    if (!state.bankUsers || state.bankUsers.length === 0) {
-        await loadBankUsers();
-    } else {
-        populateUserSelectors();
-    }
+    await loadBanksAndBranchesForDeviceForm();
+
     qs("#device-name").value = device.name || "";
     qs("#device-rtsp").value = device.rtsp_url || "";
-    qs("#device-host").value = device.host || "";
-    qs("#device-port").value = device.port || "554";
-    qs("#device-rtsp-user").value = device.username || "";
-    qs("#device-rtsp-pass").value = "";  // Don't populate password for security
-    qs("#device-stream-path").value = device.stream_path || "/stream1";
-    qs("#device-transport").value = device.transport || "tcp";
     qs("#device-location").value = device.location || "";
     qs("#device-manufacturer").value = device.manufacturer || "";
-    qs("#device-type").value = device.device_type || "ip_camera";
-    if (qs("#device-assign-user")) qs("#device-assign-user").value = device.assigned_user_id || "";
-    if (qs("#device-assign-user-2")) qs("#device-assign-user-2").value = device.assigned_user_2_id || "";
+    if (qs("#device-type")) qs("#device-type").value = "rtsp";
+    if (qs("#device-bank-id")) qs("#device-bank-id").value = device.bank_id || "";
+    populateBranchSelectForDeviceForm(device.bank_id);
+    if (qs("#device-branch-id")) qs("#device-branch-id").value = device.branch_id || "";
     if (qs("#device-enable-email")) qs("#device-enable-email").checked = device.enable_email !== false;
     if (qs("#device-enable-whatsapp")) qs("#device-enable-whatsapp").checked = device.enable_whatsapp !== false;
     editingDeviceId = device.id;
@@ -637,7 +700,7 @@ qs("#delete-device-btn").addEventListener("click", async () => {
     }
 });
 
-qs("#cancel-device-btn").addEventListener("click", () => {
+qs("#cancel-device-btn")?.addEventListener("click", () => {
     qs("#add-device-form").classList.add("hidden");
     resetDeviceForm();
     if (state.selectedDeviceId) {
@@ -648,28 +711,46 @@ qs("#cancel-device-btn").addEventListener("click", () => {
     }
 });
 
+qs("#close-device-modal-btn")?.addEventListener("click", () => {
+    qs("#cancel-device-btn")?.click();
+});
+
 // Build device data from form
 function getDeviceFormData() {
     const name = qs("#device-name").value.trim();
-    const rtsp_url = qs("#device-rtsp").value.trim();
-    const device_type = qs("#device-type").value;
-    const host = qs("#device-host").value.trim();
-    const port = parseInt(qs("#device-port").value) || 554;
-    const username = qs("#device-rtsp-user").value.trim();
-    const password = qs("#device-rtsp-pass").value.trim();
-    const stream_path = qs("#device-stream-path").value.trim() || "/stream1";
-    const transport = qs("#device-transport").value;
+    let rtsp_url = qs("#device-rtsp").value.trim();
+    const device_type = "rtsp";
+    
+    // Auto-prepend rtsp:// scheme if omitted
+    if (rtsp_url && !rtsp_url.toLowerCase().startsWith("rtsp://") && !rtsp_url.toLowerCase().startsWith("rtsps://")) {
+        rtsp_url = "rtsp://" + rtsp_url;
+    }
+
+    // Automatically parse components from RTSP URL
+    let host = null, port = 554, username = null, password = null, stream_path = "/stream1";
+    if (rtsp_url) {
+        const parsed = parseRtspUrl(rtsp_url);
+        if (parsed) {
+            host = parsed.host;
+            port = parsed.port || 554;
+            username = parsed.username;
+            password = parsed.password;
+            stream_path = parsed.stream_path || "/stream1";
+        }
+    }
+
     const location = qs("#device-location").value.trim();
     const manufacturer = qs("#device-manufacturer").value.trim();
-    const assignVal = qs("#device-assign-user") ? qs("#device-assign-user").value : "";
-    const assigned_user_id = assignVal ? parseInt(assignVal) : null;
-    const assignVal2 = qs("#device-assign-user-2") ? qs("#device-assign-user-2").value : "";
-    const assigned_user_2_id = assignVal2 ? parseInt(assignVal2) : null;
+    const bankVal = qs("#device-bank-id") ? qs("#device-bank-id").value : "";
+    const bank_id = bankVal ? parseInt(bankVal) : null;
+    const branchVal = qs("#device-branch-id") ? qs("#device-branch-id").value : "";
+    const branch_id = branchVal ? parseInt(branchVal) : null;
     const enable_email = qs("#device-enable-email") ? qs("#device-enable-email").checked : true;
     const enable_whatsapp = qs("#device-enable-whatsapp") ? qs("#device-enable-whatsapp").checked : true;
 
-    return { name, rtsp_url, device_type, host, port, username, password, stream_path, transport, location, manufacturer, assigned_user_id, assigned_user_2_id, enable_email, enable_whatsapp };
+    return { name, rtsp_url, device_type, host, port, username, password, stream_path, transport: "tcp", location, manufacturer, bank_id, branch_id, enable_email, enable_whatsapp };
 }
+
 
 qs("#save-device-btn").addEventListener("click", async () => {
     const data = getDeviceFormData();

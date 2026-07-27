@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ from app.schemas.device import DeviceCreate, DeviceUpdate
 
 def sanitize_rtsp_url(url: str) -> str:
     """
-    Fix malformed RTSP URLs.
+    Fix malformed RTSP URLs while keeping parameters intact.
     Examples:
       rtsp:554//admin1234:12345678@192.168.29.114:554/stream1 -> rtsp://admin1234:12345678@192.168.29.114:554/stream1
       rtsp://admin:pass@192.168.1.1:/stream1                -> rtsp://admin:pass@192.168.1.1:554/stream1
@@ -19,7 +19,7 @@ def sanitize_rtsp_url(url: str) -> str:
     if not url:
         return url
     # Fix typos like 'rtsp:554//' or 'rtsp:PORT//' -> 'rtsp://'
-    url = re.sub(r'^rtsp:\d+//', 'rtsp://', url)
+    url = re.sub(r'^rtsp:\d+//', 'rtsp://', url, flags=re.IGNORECASE)
     # Fix genuinely empty ports: host:/path -> host:554/path
     url = re.sub(r'(@[^/:]+|://[^/:@]+):(/)', r'\1:554\2', url)
     return url
@@ -27,23 +27,29 @@ def sanitize_rtsp_url(url: str) -> str:
 
 def parse_rtsp_url(url: str) -> dict:
     """
-    Parse an RTSP URL into its component parts.
+    Parse an RTSP URL into component parts.
+    Supports query parameters (?channel=1&subtype=1) and URL-decoded credentials (%40, %23, etc.)
 
-    Example: rtsp://admin1234:12345678@192.168.29.114:554/stream1
-    Returns: {host: '192.168.29.114', port: 554, username: 'admin1234',
-              password: '12345678', stream_path: '/stream1'}
+    Example: rtsp://admin:pass%40123@192.168.1.108:554/cam/realmonitor?channel=1&subtype=1
+    Returns: {host: '192.168.1.108', port: 554, username: 'admin',
+              password: 'pass@123', stream_path: '/cam/realmonitor?channel=1&subtype=1'}
     """
     result = {"host": None, "port": 554, "username": None, "password": None, "stream_path": "/stream1"}
     if not url or not url.startswith("rtsp://"):
         return result
 
     try:
-        parsed = urlparse(url)
+        http_url = re.sub(r'^rtsp://', 'http://', url, flags=re.IGNORECASE)
+        parsed = urlparse(http_url)
         result["host"] = parsed.hostname
         result["port"] = parsed.port or 554
-        result["username"] = parsed.username
-        result["password"] = parsed.password
-        result["stream_path"] = parsed.path or "/stream1"
+        result["username"] = unquote(parsed.username) if parsed.username else None
+        result["password"] = unquote(parsed.password) if parsed.password else None
+
+        path_str = parsed.path or "/stream1"
+        if parsed.query:
+            path_str = f"{path_str}?{parsed.query}"
+        result["stream_path"] = path_str
     except Exception:
         pass
 
@@ -102,7 +108,7 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
 
     device = Device(
         name=device_data.name,
-        device_type=device_data.device_type,
+        device_type=device_data.device_type or "rtsp",
         rtsp_url=rtsp_url,
         host=host,
         port=port,
@@ -119,6 +125,7 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
         extra_config=device_data.extra_config or {},
         owner_id=user.id,
         bank_id=target_bank_id,
+        branch_id=device_data.branch_id,
         assigned_user_id=device_data.assigned_user_id,
         assigned_user_2_id=device_data.assigned_user_2_id,
         whatsapp_number_1=device_data.whatsapp_number_1,
@@ -129,18 +136,55 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
     db.add(device)
     db.commit()
     db.refresh(device)
-    return device
+    return format_device_out(device)
 
 
-def get_user_devices(db: Session, user: User) -> list[Device]:
-    if user.role == "super_admin":
-        return db.query(Device).all()
+def format_device_out(device: Device) -> dict:
+    return {
+        "id": device.id,
+        "name": device.name,
+        "device_type": device.device_type,
+        "host": device.host,
+        "port": device.port or 554,
+        "username": device.username,
+        "stream_path": device.stream_path or "/stream1",
+        "transport": device.transport or "tcp",
+        "rtsp_url": device.rtsp_url,
+        "manufacturer": device.manufacturer,
+        "model": device.model,
+        "firmware_version": device.firmware_version,
+        "location": device.location,
+        "latitude": device.latitude,
+        "longitude": device.longitude,
+        "is_online": device.is_online,
+        "is_recording": device.is_recording,
+        "last_seen": device.last_seen,
+        "extra_config": device.extra_config,
+        "owner_id": device.owner_id,
+        "bank_id": device.bank_id,
+        "branch_id": device.branch_id,
+        "bank_name": device.bank.name if device.bank else None,
+        "branch_name": device.branch.name if device.branch else None,
+        "assigned_user_id": device.assigned_user_id,
+        "assigned_user_2_id": device.assigned_user_2_id,
+        "whatsapp_number_1": device.whatsapp_number_1,
+        "whatsapp_number_2": device.whatsapp_number_2,
+        "enable_email": device.enable_email if device.enable_email is not None else True,
+        "enable_whatsapp": device.enable_whatsapp if device.enable_whatsapp is not None else True,
+        "created_at": device.created_at,
+    }
+
+
+def get_user_devices(db: Session, user: User) -> list[dict]:
+    if user.role in ["super_admin", "admin"]:
+        devices = db.query(Device).all()
     elif user.role == "bank_admin":
-        return db.query(Device).filter(Device.bank_id == user.bank_id).all()
+        devices = db.query(Device).filter(Device.bank_id == user.bank_id).all()
     else:
-        return db.query(Device).filter(
+        devices = db.query(Device).filter(
             (Device.assigned_user_id == user.id) | (Device.bank_id == user.bank_id)
         ).all()
+    return [format_device_out(d) for d in devices]
 
 
 def get_device_by_id(db: Session, device_id: int) -> Device:
@@ -150,7 +194,7 @@ def get_device_by_id(db: Session, device_id: int) -> Device:
     return device
 
 
-def update_device_service(db: Session, device_id: int, update_data: DeviceUpdate) -> Device:
+def update_device_service(db: Session, device_id: int, update_data: DeviceUpdate) -> dict:
     device = get_device_by_id(db, device_id)
     update_dict = update_data.model_dump(exclude_unset=True)
     for field, value in update_dict.items():
@@ -173,7 +217,7 @@ def update_device_service(db: Session, device_id: int, update_data: DeviceUpdate
 
     db.commit()
     db.refresh(device)
-    return device
+    return format_device_out(device)
 
 
 def delete_device_service(db: Session, device_id: int) -> None:
@@ -182,7 +226,7 @@ def delete_device_service(db: Session, device_id: int) -> None:
     db.commit()
 
 
-def assign_device_service(db: Session, device_id: int, user_id: int) -> Device:
+def assign_device_service(db: Session, device_id: int, user_id: int) -> dict:
     device = get_device_by_id(db, device_id)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -192,4 +236,5 @@ def assign_device_service(db: Session, device_id: int, user_id: int) -> Device:
         device.bank_id = user.bank_id
     db.commit()
     db.refresh(device)
-    return device
+    return format_device_out(device)
+

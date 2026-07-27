@@ -37,16 +37,8 @@ async def validate_rtsp_connection_async(
     Returns:
         True if the stream is accessible, False otherwise
     """
-    if rtsp_url.isdigit():
-        try:
-            import cv2
-            cap = cv2.VideoCapture(int(rtsp_url))
-            if cap.isOpened():
-                cap.release()
-                return True
-            return False
-        except Exception:
-            return False
+    if not rtsp_url:
+        return False
 
     try:
         process = await asyncio.create_subprocess_exec(

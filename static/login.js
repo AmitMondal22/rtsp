@@ -58,14 +58,14 @@ function showToast(message, type = "success") {
 // Login form submit
 qs("#login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const username = qs("#login-username").value.trim();
+    const identifier = qs("#login-username").value.trim();
     const password = qs("#login-password").value.trim();
     const errEl = qs("#login-error");
 
     try {
         const data = await api("/api/users/login", {
             method: "POST",
-            body: JSON.stringify({ username, password }),
+            body: JSON.stringify({ email: identifier, username: identifier, password }),
         });
         localStorage.setItem("token", data.access_token);
         showToast("Signed in successfully!", "success");
