@@ -5,12 +5,39 @@ Uses Python built-in smtplib — no external dependencies needed.
 """
 import smtplib
 import logging
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from app.config import settings
 
 logger = logging.getLogger("email")
+
+_smtp_quota_exceeded_until = 0.0
+
+
+def is_smtp_quota_exceeded() -> bool:
+    global _smtp_quota_exceeded_until
+    return time.time() < _smtp_quota_exceeded_until
+
+
+def mark_smtp_quota_exceeded(duration_seconds: int = 600):
+    global _smtp_quota_exceeded_until
+    _smtp_quota_exceeded_until = time.time() + duration_seconds
+
+
+def _handle_smtp_error(e: Exception, recipient: str, label: str):
+    err_str = str(e)
+    if "550" in err_str or "5.4.5" in err_str or "Daily user sending limit" in err_str or "quota" in err_str.lower() or "limit exceeded" in err_str.lower():
+        mark_smtp_quota_exceeded(600)
+        logger.error(
+            "SMTP Daily Quota / Sending Limit Exceeded (550) for %s [%s]. "
+            "Pausing SMTP emails for 10 minutes (MQTT/WhatsApp fallback remains active). "
+            "Please check Gmail daily sending limits or use SendGrid/Mailgun/SES. Error: %s",
+            recipient, label, err_str
+        )
+    else:
+        logger.error("Failed to send %s email to %s: %s", label, recipient, e)
 
 
 def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: str = "OTP Code") -> bool:
@@ -28,6 +55,10 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: st
     """
     if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
         logger.warning("SMTP not configured — skipping OTP email")
+        return False
+
+    if is_smtp_quota_exceeded():
+        logger.warning("SMTP daily quota exceeded — skipping %s to %s (MQTT/WhatsApp fallback active)", otp_label, to_email)
         return False
 
     import datetime
@@ -101,7 +132,7 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: st
         return True
 
     except Exception as e:
-        logger.error("Failed to send %s email to %s: %s", otp_label, to_email, e)
+        _handle_smtp_error(e, to_email, otp_label)
         return False
 
 
@@ -111,6 +142,10 @@ def send_branch_user_email(to_email: str, username: str, branch_name: str, actio
     """
     if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
         logger.warning("SMTP not configured — skipping branch user email notification for %s", to_email)
+        return False
+
+    if is_smtp_quota_exceeded():
+        logger.warning("SMTP daily quota exceeded — skipping branch notification email for %s", to_email)
         return False
 
     subject = f"IP Camera Manager — Account {action.capitalize()} Branch '{branch_name}'"
@@ -169,6 +204,6 @@ def send_branch_user_email(to_email: str, username: str, branch_name: str, actio
         logger.info("Branch user notification sent to %s for branch '%s'", to_email, branch_name)
         return True
     except Exception as e:
-        logger.error("Failed to send branch user notification to %s: %s", to_email, e)
+        _handle_smtp_error(e, to_email, "branch notification")
         return False
 
