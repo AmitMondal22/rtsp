@@ -221,7 +221,12 @@ def update_device_service(db: Session, device_id: int, update_data: DeviceUpdate
 
 
 def delete_device_service(db: Session, device_id: int) -> None:
+    from app.models.message import ThreadMessage
+    from app.models.otp import OTPCode
+
     device = get_device_by_id(db, device_id)
+    db.query(ThreadMessage).filter(ThreadMessage.device_id == device_id).delete(synchronize_session=False)
+    db.query(OTPCode).filter(OTPCode.device_id == device_id).delete(synchronize_session=False)
     db.delete(device)
     db.commit()
 

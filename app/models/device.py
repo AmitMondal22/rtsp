@@ -58,6 +58,6 @@ class Device(Base):
     branch = relationship("Branch", back_populates="devices")
     assigned_user = relationship("User", foreign_keys=[assigned_user_id])
     assigned_user_2 = relationship("User", foreign_keys=[assigned_user_2_id])
-    messages = relationship("ThreadMessage", back_populates="device")
-    otp_codes = relationship("OTPCode", back_populates="device")
+    messages = relationship("ThreadMessage", back_populates="device", cascade="all, delete-orphan")
+    otp_codes = relationship("OTPCode", back_populates="device", cascade="all, delete-orphan")
 

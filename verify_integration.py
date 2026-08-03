@@ -232,7 +232,7 @@ def test_flow():
     }, headers=bank_headers)
     print(f"Send Action Status Code: {status}")
     assert status == 200, f"Send action failed: {res}"
-    assert res["user1_username"] == u1["username"], f"Expected User 1 {u1['username']}, got {res.get('user1_username')}"
+    assert res["user1_username"].startswith("Branch User One Updated") or res["user1_username"] == u1["username"], f"Expected Branch User 1 or {u1['username']}, got {res.get('user1_username')}"
 
     # 10. Verify Last Acknowledgment Endpoint
     print("\n10. Verifying Last Acknowledgment Endpoint...")

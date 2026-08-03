@@ -600,8 +600,16 @@ async function loadBanksAndBranchesForDeviceForm() {
         if (bankSelect) {
             bankSelect.innerHTML = '<option value="">— Select Bank —</option>' +
                 state.banks.map(b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join("");
+            
+            if (state.currentUser && state.currentUser.bank_id) {
+                bankSelect.value = String(state.currentUser.bank_id);
+                populateBranchSelectForDeviceForm(state.currentUser.bank_id);
+            } else {
+                populateBranchSelectForDeviceForm();
+            }
+        } else {
+            populateBranchSelectForDeviceForm();
         }
-        populateBranchSelectForDeviceForm();
     } catch (e) {
         console.error("Failed to load banks and branches for device form:", e);
     }
@@ -612,8 +620,8 @@ function populateBranchSelectForDeviceForm(bankId = null) {
     if (!branchSelect) return;
 
     let filtered = state.branches || [];
-    if (bankId) {
-        filtered = filtered.filter(b => b.bank_id === parseInt(bankId));
+    if (bankId && bankId !== "all" && bankId !== "") {
+        filtered = filtered.filter(b => String(b.bank_id) === String(bankId));
     }
 
     branchSelect.innerHTML = '<option value="">— Select Branch —</option>' +
@@ -631,7 +639,15 @@ async function resetDeviceForm() {
     qs("#device-rtsp").value = "";
     qs("#device-location").value = "";
     qs("#device-manufacturer").value = "";
-    if (qs("#device-bank-id")) qs("#device-bank-id").value = "";
+    if (qs("#device-bank-id")) {
+        if (state.currentUser && state.currentUser.bank_id) {
+            qs("#device-bank-id").value = String(state.currentUser.bank_id);
+            populateBranchSelectForDeviceForm(state.currentUser.bank_id);
+        } else {
+            qs("#device-bank-id").value = "";
+            populateBranchSelectForDeviceForm();
+        }
+    }
     if (qs("#device-branch-id")) qs("#device-branch-id").value = "";
     if (qs("#device-enable-email")) qs("#device-enable-email").checked = true;
     if (qs("#device-enable-whatsapp")) qs("#device-enable-whatsapp").checked = true;
@@ -650,9 +666,29 @@ async function populateDeviceForm(device) {
     qs("#device-location").value = device.location || "";
     qs("#device-manufacturer").value = device.manufacturer || "";
     if (qs("#device-type")) qs("#device-type").value = "rtsp";
-    if (qs("#device-bank-id")) qs("#device-bank-id").value = device.bank_id || "";
-    populateBranchSelectForDeviceForm(device.bank_id);
-    if (qs("#device-branch-id")) qs("#device-branch-id").value = device.branch_id || "";
+
+    // 1. Resolve Target Bank ID (either directly or via branch lookup)
+    let targetBankId = device.bank_id;
+    if (!targetBankId && device.branch_id && state.branches) {
+        const foundBranch = state.branches.find(b => String(b.id) === String(device.branch_id));
+        if (foundBranch) targetBankId = foundBranch.bank_id;
+    }
+
+    // 2. Select Bank
+    const bankSelect = qs("#device-bank-id");
+    if (bankSelect && targetBankId) {
+        bankSelect.value = String(targetBankId);
+    }
+
+    // 3. Populate Branches for Bank
+    populateBranchSelectForDeviceForm(targetBankId);
+
+    // 4. Select Branch
+    const branchSelect = qs("#device-branch-id");
+    if (branchSelect && device.branch_id) {
+        branchSelect.value = String(device.branch_id);
+    }
+
     if (qs("#device-enable-email")) qs("#device-enable-email").checked = device.enable_email !== false;
     if (qs("#device-enable-whatsapp")) qs("#device-enable-whatsapp").checked = device.enable_whatsapp !== false;
     editingDeviceId = device.id;
@@ -741,10 +777,21 @@ function getDeviceFormData() {
 
     const location = qs("#device-location").value.trim();
     const manufacturer = qs("#device-manufacturer").value.trim();
+
+    const existingDevice = editingDeviceId ? (state.devices || []).find(d => d.id === editingDeviceId) : null;
+
     const bankVal = qs("#device-bank-id") ? qs("#device-bank-id").value : "";
-    const bank_id = bankVal ? parseInt(bankVal) : null;
+    let bank_id = bankVal ? parseInt(bankVal) : null;
+    if (!bank_id && existingDevice && existingDevice.bank_id) {
+        bank_id = existingDevice.bank_id;
+    }
+
     const branchVal = qs("#device-branch-id") ? qs("#device-branch-id").value : "";
-    const branch_id = branchVal ? parseInt(branchVal) : null;
+    let branch_id = branchVal ? parseInt(branchVal) : null;
+    if (!branch_id && existingDevice && existingDevice.branch_id) {
+        branch_id = existingDevice.branch_id;
+    }
+
     const enable_email = qs("#device-enable-email") ? qs("#device-enable-email").checked : true;
     const enable_whatsapp = qs("#device-enable-whatsapp") ? qs("#device-enable-whatsapp").checked : true;
 
@@ -753,11 +800,19 @@ function getDeviceFormData() {
 
 
 qs("#save-device-btn").addEventListener("click", async () => {
+    const btn = qs("#save-device-btn");
+    if (btn.disabled || btn.getAttribute("data-submitting") === "true") return;
+
     const data = getDeviceFormData();
     if (!data.name) {
         qs("#device-error").textContent = "Device name is required.";
         return;
     }
+
+    btn.disabled = true;
+    btn.setAttribute("data-submitting", "true");
+    const origText = btn.innerHTML;
+    btn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Saving Device...`;
 
     try {
         if (editingDeviceId) {
@@ -771,7 +826,7 @@ qs("#save-device-btn").addEventListener("click", async () => {
             });
             await loadDevices();
             qs("#add-device-form").classList.add("hidden");
-            resetDeviceForm();
+            await resetDeviceForm();
             selectDevice(device.id);
             showToast(`Device "${device.name}" updated!`);
         } else {
@@ -781,11 +836,16 @@ qs("#save-device-btn").addEventListener("click", async () => {
             });
             await loadDevices();
             qs("#add-device-form").classList.add("hidden");
+            await resetDeviceForm();
             selectDevice(device.id);
             showToast(`Device "${device.name}" added successfully!`);
         }
     } catch (err) {
         qs("#device-error").textContent = err.message;
+    } finally {
+        btn.disabled = false;
+        btn.removeAttribute("data-submitting");
+        btn.innerHTML = origText;
     }
 });
 
