@@ -277,6 +277,9 @@ qs("#cancel-add-user")?.addEventListener("click", () => addUserModal.classList.a
 // Handle Add User Form Submission
 qs("#add-user-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+
     const username = qs("#user-username").value.trim();
     const email = qs("#user-email").value.trim();
     const whatsappNumber = qs("#user-whatsapp") ? qs("#user-whatsapp").value.trim() : "";
@@ -289,6 +292,13 @@ qs("#add-user-form")?.addEventListener("submit", async (e) => {
     const isActive = qs("#user-is-active").checked;
     const password = qs("#user-password").value.trim();
     const errEl = qs("#add-user-error");
+    if (errEl) errEl.textContent = "";
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add("opacity-60", "cursor-not-allowed");
+        submitBtn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Registering...`;
+    }
 
     try {
         await api("/api/banks/users", {
@@ -299,7 +309,13 @@ qs("#add-user-form")?.addEventListener("submit", async (e) => {
         showToast("User registered successfully!");
         await loadBankUsers();
     } catch (err) {
-        errEl.textContent = err.message;
+        if (errEl) errEl.textContent = err.message;
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove("opacity-60", "cursor-not-allowed");
+            submitBtn.innerHTML = origBtnText;
+        }
     }
 });
 
@@ -331,6 +347,9 @@ qs("#cancel-edit-user")?.addEventListener("click", () => editUserModal.classList
 // Handle Edit User Form Submission
 qs("#edit-user-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+
     const userId = qs("#edit-user-id").value;
     const username = qs("#edit-user-username").value.trim();
     const email = qs("#edit-user-email").value.trim();
@@ -344,9 +363,16 @@ qs("#edit-user-form")?.addEventListener("submit", async (e) => {
     const isActive = qs("#edit-user-is-active").checked;
     const password = qs("#edit-user-password").value.trim();
     const errEl = qs("#edit-user-error");
+    if (errEl) errEl.textContent = "";
 
     const payload = { username, email, whatsapp_number: whatsappNumber, role, bank_id, branch_id, is_active: isActive };
     if (password) payload.password = password;
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add("opacity-60", "cursor-not-allowed");
+        submitBtn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Saving...`;
+    }
 
     try {
         await api(`/api/banks/users/${userId}`, {
@@ -357,7 +383,13 @@ qs("#edit-user-form")?.addEventListener("submit", async (e) => {
         showToast("User updated successfully!");
         await loadBankUsers();
     } catch (err) {
-        errEl.textContent = err.message;
+        if (errEl) errEl.textContent = err.message;
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove("opacity-60", "cursor-not-allowed");
+            submitBtn.innerHTML = origBtnText;
+        }
     }
 });
 

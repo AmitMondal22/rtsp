@@ -307,6 +307,23 @@ qs("#cancel-add-branch")?.addEventListener("click", () => addBranchModal.classLi
 
 qs("#add-branch-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const form = e.target;
+    if (form.dataset.submitting === "true") return;
+    form.dataset.submitting = "true";
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+
+    const formElements = form.querySelectorAll("input, select, button");
+    formElements.forEach(el => {
+        el.disabled = true;
+        el.classList.add("opacity-60", "cursor-not-allowed");
+    });
+
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Saving Branch...`;
+    }
+
     const bankId = parseInt(qs("#branch-bank-id").value);
     const name = qs("#branch-name").value.trim();
     const isActive = qs("#branch-is-active").checked;
@@ -343,6 +360,7 @@ qs("#add-branch-form")?.addEventListener("submit", async (e) => {
     else if (u3OtpRole === "otp2") otp2UserChoice = 3;
 
     const errEl = qs("#add-branch-error");
+    if (errEl) errEl.textContent = "";
 
     const payload = {
         bank_id: bankId,
@@ -376,7 +394,16 @@ qs("#add-branch-form")?.addEventListener("submit", async (e) => {
         showToast("Branch and 3 Users created with OTP configuration successfully!");
         await loadBranches();
     } catch (err) {
-        errEl.textContent = err.message;
+        if (errEl) errEl.textContent = err.message;
+    } finally {
+        form.dataset.submitting = "false";
+        formElements.forEach(el => {
+            el.disabled = false;
+            el.classList.remove("opacity-60", "cursor-not-allowed");
+        });
+        if (submitBtn && origBtnText) {
+            submitBtn.innerHTML = origBtnText;
+        }
     }
 });
 
@@ -434,6 +461,23 @@ qs("#cancel-edit-branch")?.addEventListener("click", () => editBranchModal.class
 
 qs("#edit-branch-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const form = e.target;
+    if (form.dataset.submitting === "true") return;
+    form.dataset.submitting = "true";
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+
+    const formElements = form.querySelectorAll("input, select, button");
+    formElements.forEach(el => {
+        el.disabled = true;
+        el.classList.add("opacity-60", "cursor-not-allowed");
+    });
+
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Saving Changes...`;
+    }
+
     const branchId = qs("#edit-branch-id").value;
     const bankId = parseInt(qs("#edit-branch-bank-id").value);
     const name = qs("#edit-branch-name").value.trim();
@@ -464,6 +508,7 @@ qs("#edit-branch-form")?.addEventListener("submit", async (e) => {
     const enableOtp2 = (u1OtpRole === "otp2" || u2OtpRole === "otp2" || u3OtpRole === "otp2");
 
     const errEl = qs("#edit-branch-error");
+    if (errEl) errEl.textContent = "";
 
     const payload = {
         bank_id: bankId,
@@ -500,7 +545,16 @@ qs("#edit-branch-form")?.addEventListener("submit", async (e) => {
         showToast("Branch, users, and OTP settings updated successfully!");
         await loadBranches();
     } catch (err) {
-        errEl.textContent = err.message;
+        if (errEl) errEl.textContent = err.message;
+    } finally {
+        form.dataset.submitting = "false";
+        formElements.forEach(el => {
+            el.disabled = false;
+            el.classList.remove("opacity-60", "cursor-not-allowed");
+        });
+        if (submitBtn && origBtnText) {
+            submitBtn.innerHTML = origBtnText;
+        }
     }
 });
 

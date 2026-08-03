@@ -267,11 +267,29 @@ qs("#cancel-add-bank")?.addEventListener("click", () => addBankModal.classList.a
 
 qs("#add-bank-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const form = e.target;
+    if (form.dataset.submitting === "true") return;
+    form.dataset.submitting = "true";
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+
+    const formElements = form.querySelectorAll("input, select, button");
+    formElements.forEach(el => {
+        el.disabled = true;
+        el.classList.add("opacity-60", "cursor-not-allowed");
+    });
+
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Creating...`;
+    }
+
     const bankName = qs("#bank-name").value.trim();
     const username = qs("#bank-admin-username").value.trim();
     const email = qs("#bank-admin-email").value.trim();
     const password = qs("#bank-admin-password").value.trim();
     const errEl = qs("#add-bank-error");
+    if (errEl) errEl.textContent = "";
 
     try {
         await api("/api/banks/", {
@@ -282,7 +300,16 @@ qs("#add-bank-form")?.addEventListener("submit", async (e) => {
         showToast("Bank & Admin created successfully!");
         await loadBanks();
     } catch (err) {
-        errEl.textContent = err.message;
+        if (errEl) errEl.textContent = err.message;
+    } finally {
+        form.dataset.submitting = "false";
+        formElements.forEach(el => {
+            el.disabled = false;
+            el.classList.remove("opacity-60", "cursor-not-allowed");
+        });
+        if (submitBtn && origBtnText) {
+            submitBtn.innerHTML = origBtnText;
+        }
     }
 });
 
@@ -297,9 +324,27 @@ qs("#cancel-edit-bank")?.addEventListener("click", () => editBankModal.classList
 
 qs("#edit-bank-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const form = e.target;
+    if (form.dataset.submitting === "true") return;
+    form.dataset.submitting = "true";
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+
+    const formElements = form.querySelectorAll("input, select, button");
+    formElements.forEach(el => {
+        el.disabled = true;
+        el.classList.add("opacity-60", "cursor-not-allowed");
+    });
+
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Saving...`;
+    }
+
     const bankId = qs("#edit-bank-id").value;
     const bankName = qs("#edit-bank-name").value.trim();
     const errEl = qs("#edit-bank-error");
+    if (errEl) errEl.textContent = "";
 
     try {
         await api(`/api/banks/${bankId}`, {
@@ -310,7 +355,16 @@ qs("#edit-bank-form")?.addEventListener("submit", async (e) => {
         showToast("Bank updated successfully!");
         await loadBanks();
     } catch (err) {
-        errEl.textContent = err.message;
+        if (errEl) errEl.textContent = err.message;
+    } finally {
+        form.dataset.submitting = "false";
+        formElements.forEach(el => {
+            el.disabled = false;
+            el.classList.remove("opacity-60", "cursor-not-allowed");
+        });
+        if (submitBtn && origBtnText) {
+            submitBtn.innerHTML = origBtnText;
+        }
     }
 });
 
@@ -341,18 +395,36 @@ qs("#cancel-add-branch")?.addEventListener("click", () => addBranchModal.classLi
 
 qs("#add-branch-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const form = e.target;
+    if (form.dataset.submitting === "true") return;
+    form.dataset.submitting = "true";
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+
+    const formElements = form.querySelectorAll("input, select, button");
+    formElements.forEach(el => {
+        el.disabled = true;
+        el.classList.add("opacity-60", "cursor-not-allowed");
+    });
+
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Saving Branch...`;
+    }
+
     const bankId = parseInt(qs("#branch-bank-id").value);
     const name = qs("#branch-name").value.trim();
     const isActive = qs("#branch-is-active").checked;
 
-    const u1 = qs("#branch-user-1").value;
-    const u2 = qs("#branch-user-2").value;
-    const u3 = qs("#branch-user-3").value;
+    const u1 = qs("#branch-user-1") ? qs("#branch-user-1").value : "";
+    const u2 = qs("#branch-user-2") ? qs("#branch-user-2").value : "";
+    const u3 = qs("#branch-user-3") ? qs("#branch-user-3").value : "";
 
-    const otp1 = qs("#branch-otp1-user").value;
-    const otp2 = qs("#branch-otp2-user").value;
+    const otp1 = qs("#branch-otp1-user") ? qs("#branch-otp1-user").value : "";
+    const otp2 = qs("#branch-otp2-user") ? qs("#branch-otp2-user").value : "";
 
     const errEl = qs("#add-branch-error");
+    if (errEl) errEl.textContent = "";
 
     const payload = {
         bank_id: bankId,
@@ -374,7 +446,16 @@ qs("#add-branch-form")?.addEventListener("submit", async (e) => {
         showToast("Branch created successfully!");
         await loadBranches();
     } catch (err) {
-        errEl.textContent = err.message;
+        if (errEl) errEl.textContent = err.message;
+    } finally {
+        form.dataset.submitting = "false";
+        formElements.forEach(el => {
+            el.disabled = false;
+            el.classList.remove("opacity-60", "cursor-not-allowed");
+        });
+        if (submitBtn && origBtnText) {
+            submitBtn.innerHTML = origBtnText;
+        }
     }
 });
 
@@ -405,19 +486,37 @@ qs("#cancel-edit-branch")?.addEventListener("click", () => editBranchModal.class
 
 qs("#edit-branch-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const form = e.target;
+    if (form.dataset.submitting === "true") return;
+    form.dataset.submitting = "true";
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+
+    const formElements = form.querySelectorAll("input, select, button");
+    formElements.forEach(el => {
+        el.disabled = true;
+        el.classList.add("opacity-60", "cursor-not-allowed");
+    });
+
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i class="bi bi-arrow-repeat mr-1.5 animate-spin"></i> Saving Changes...`;
+    }
+
     const branchId = qs("#edit-branch-id").value;
     const bankId = parseInt(qs("#edit-branch-bank-id").value);
     const name = qs("#edit-branch-name").value.trim();
     const isActive = qs("#edit-branch-is-active").checked;
 
-    const u1 = qs("#edit-branch-user-1").value;
-    const u2 = qs("#edit-branch-user-2").value;
-    const u3 = qs("#edit-branch-user-3").value;
+    const u1 = qs("#edit-branch-user-1") ? qs("#edit-branch-user-1").value : "";
+    const u2 = qs("#edit-branch-user-2") ? qs("#edit-branch-user-2").value : "";
+    const u3 = qs("#edit-branch-user-3") ? qs("#edit-branch-user-3").value : "";
 
-    const otp1 = qs("#edit-branch-otp1-user").value;
-    const otp2 = qs("#edit-branch-otp2-user").value;
+    const otp1 = qs("#edit-branch-otp1-user") ? qs("#edit-branch-otp1-user").value : "";
+    const otp2 = qs("#edit-branch-otp2-user") ? qs("#edit-branch-otp2-user").value : "";
 
     const errEl = qs("#edit-branch-error");
+    if (errEl) errEl.textContent = "";
 
     const payload = {
         bank_id: bankId,
@@ -439,7 +538,16 @@ qs("#edit-branch-form")?.addEventListener("submit", async (e) => {
         showToast("Branch updated successfully!");
         await loadBranches();
     } catch (err) {
-        errEl.textContent = err.message;
+        if (errEl) errEl.textContent = err.message;
+    } finally {
+        form.dataset.submitting = "false";
+        formElements.forEach(el => {
+            el.disabled = false;
+            el.classList.remove("opacity-60", "cursor-not-allowed");
+        });
+        if (submitBtn && origBtnText) {
+            submitBtn.innerHTML = origBtnText;
+        }
     }
 });
 

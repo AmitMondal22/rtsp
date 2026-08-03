@@ -131,8 +131,12 @@ def update_bank_user_service(db: Session, user_id: int, data) -> dict:
     if data.role is not None:
         user.role = data.role
     if data.bank_id is not None:
+        if data.bank_id and not db.query(Bank).filter(Bank.id == data.bank_id).first():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bank not found")
         user.bank_id = data.bank_id
     if getattr(data, "branch_id", None) is not None:
+        if data.branch_id and not db.query(Branch).filter(Branch.id == data.branch_id).first():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found")
         user.branch_id = data.branch_id
     if data.password:
         user.hashed_password = hash_password(data.password)
@@ -241,6 +245,14 @@ def _resolve_otp_users(u1: User, u2: User, u3: User, r1: Optional[str], r2: Opti
     return otp1_id, otp2_id
 
 
+import threading
+
+def _async_send_email(email: str, username: str, branch_name: str, action: str):
+    try:
+        send_branch_user_email(email, username, branch_name, action=action)
+    except Exception:
+        pass
+
 def _save_or_update_branch_user(
     db: Session,
     bank_id: int,
@@ -272,6 +284,18 @@ def _save_or_update_branch_user(
     if not clean_username:
         clean_username = f"user{slot}_b{branch_id}_{int(time.time()*1000)}"
 
+    if clean_username:
+        base_username = clean_username
+        counter = 1
+        while True:
+            q = db.query(User).filter(func.lower(User.username) == clean_username.lower())
+            if existing_user_id:
+                q = q.filter(User.id != existing_user_id)
+            if not q.first():
+                break
+            counter += 1
+            clean_username = f"{base_username}_{counter}"
+
     user = None
     if existing_user_id:
         user = db.query(User).filter(User.id == existing_user_id).first()
@@ -291,7 +315,7 @@ def _save_or_update_branch_user(
 
         db.commit()
         db.refresh(user)
-        send_branch_user_email(user.email, user.username, f"Branch #{branch_id}", action="updated in")
+        threading.Thread(target=_async_send_email, args=(user.email, user.username, f"Branch #{branch_id}", "updated in"), daemon=True).start()
         return user
     else:
         new_user = User(
@@ -307,7 +331,7 @@ def _save_or_update_branch_user(
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        send_branch_user_email(new_user.email, new_user.username, f"Branch #{branch_id}", action="created under")
+        threading.Thread(target=_async_send_email, args=(new_user.email, new_user.username, f"Branch #{branch_id}", "created under"), daemon=True).start()
         return new_user
 
 
