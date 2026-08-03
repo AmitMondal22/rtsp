@@ -5,7 +5,7 @@ Uses Python built-in smtplib — no external dependencies needed.
 """
 import smtplib
 import logging
-import time
+import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -13,36 +13,10 @@ from app.config import settings
 
 logger = logging.getLogger("email")
 
-_smtp_quota_exceeded_until = 0.0
-
-
-def is_smtp_quota_exceeded() -> bool:
-    global _smtp_quota_exceeded_until
-    return time.time() < _smtp_quota_exceeded_until
-
-
-def mark_smtp_quota_exceeded(duration_seconds: int = 600):
-    global _smtp_quota_exceeded_until
-    _smtp_quota_exceeded_until = time.time() + duration_seconds
-
-
-def _handle_smtp_error(e: Exception, recipient: str, label: str):
-    err_str = str(e)
-    if "550" in err_str or "5.4.5" in err_str or "Daily user sending limit" in err_str or "quota" in err_str.lower() or "limit exceeded" in err_str.lower():
-        mark_smtp_quota_exceeded(600)
-        logger.error(
-            "SMTP Daily Quota / Sending Limit Exceeded (550) for %s [%s]. "
-            "Pausing SMTP emails for 10 minutes (MQTT/WhatsApp fallback remains active). "
-            "Please check Gmail daily sending limits or use SendGrid/Mailgun/SES. Error: %s",
-            recipient, label, err_str
-        )
-    else:
-        logger.error("Failed to send %s email to %s: %s", label, recipient, e)
-
 
 def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: str = "OTP Code") -> bool:
     """
-    Send an OTP code to the user's email address.
+    Send an OTP code to the user's email address via SMTP.
 
     Args:
         to_email: Recipient email address
@@ -57,11 +31,10 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: st
         logger.warning("SMTP not configured — skipping OTP email")
         return False
 
-    if is_smtp_quota_exceeded():
-        logger.warning("SMTP daily quota exceeded — skipping %s to %s (MQTT/WhatsApp fallback active)", otp_label, to_email)
+    if not to_email or "@" not in to_email or to_email.endswith(".local"):
+        logger.warning("Invalid recipient email '%s' — skipping OTP email", to_email)
         return False
 
-    import datetime
     current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     subject = f"IP Camera Manager — {otp_label} for {device_name} - {current_time_str}"
 
@@ -128,11 +101,11 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: st
         server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
         server.sendmail(settings.SMTP_FROM_EMAIL, to_email, msg.as_string())
         server.quit()
-        logger.info("%s email sent to %s for device '%s'", otp_label, to_email, device_name)
+        logger.info("%s email successfully sent to %s for device '%s'", otp_label, to_email, device_name)
         return True
 
     except Exception as e:
-        _handle_smtp_error(e, to_email, otp_label)
+        logger.error("Failed to send %s email to %s: %s", otp_label, to_email, e)
         return False
 
 
@@ -144,8 +117,8 @@ def send_branch_user_email(to_email: str, username: str, branch_name: str, actio
         logger.warning("SMTP not configured — skipping branch user email notification for %s", to_email)
         return False
 
-    if is_smtp_quota_exceeded():
-        logger.warning("SMTP daily quota exceeded — skipping branch notification email for %s", to_email)
+    if not to_email or "@" not in to_email or to_email.endswith(".local"):
+        logger.warning("Invalid recipient email '%s' — skipping branch user notification", to_email)
         return False
 
     subject = f"IP Camera Manager — Account {action.capitalize()} Branch '{branch_name}'"
@@ -201,9 +174,8 @@ def send_branch_user_email(to_email: str, username: str, branch_name: str, actio
         server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
         server.sendmail(settings.SMTP_FROM_EMAIL, to_email, msg.as_string())
         server.quit()
-        logger.info("Branch user notification sent to %s for branch '%s'", to_email, branch_name)
+        logger.info("Branch user notification email successfully sent to %s for branch '%s'", to_email, branch_name)
         return True
     except Exception as e:
-        _handle_smtp_error(e, to_email, "branch notification")
+        logger.error("Failed to send branch user notification email to %s: %s", to_email, e)
         return False
-

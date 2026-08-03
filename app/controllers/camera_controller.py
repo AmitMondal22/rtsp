@@ -407,30 +407,30 @@ def send_action(
         u1_id = action_data.user_id_1
         u2_id = action_data.user_id_2
 
-        # 1. Resolve User 1 (defaults to branch OTP1 user or device assigned_user)
+        # 1. Resolve User 1 (1st OTP User: Branch's otp1_user_id / user1_id takes precedence)
         if u1_id:
             u1 = db.query(User).filter(User.id == u1_id).first()
-        elif device.assigned_user_id:
-            u1 = db.query(User).filter(User.id == device.assigned_user_id).first()
         elif device.branch and device.branch.otp1_user_id:
             u1 = db.query(User).filter(User.id == device.branch.otp1_user_id).first()
         elif device.branch and device.branch.user1_id:
             u1 = db.query(User).filter(User.id == device.branch.user1_id).first()
+        elif device.assigned_user_id:
+            u1 = db.query(User).filter(User.id == device.assigned_user_id).first()
         else:
             u1 = current_user
 
         if not u1:
             u1 = current_user
 
-        # 2. Resolve User 2 (defaults to branch OTP2 user or device assigned_user_2)
+        # 2. Resolve User 2 (2nd OTP User: Branch's otp2_user_id / user2_id takes precedence)
         if u2_id:
             u2 = db.query(User).filter(User.id == u2_id).first()
-        elif getattr(device, "assigned_user_2_id", None):
-            u2 = db.query(User).filter(User.id == device.assigned_user_2_id).first()
         elif device.branch and device.branch.otp2_user_id:
             u2 = db.query(User).filter(User.id == device.branch.otp2_user_id).first()
         elif device.branch and device.branch.user2_id:
             u2 = db.query(User).filter(User.id == device.branch.user2_id).first()
+        elif getattr(device, "assigned_user_2_id", None):
+            u2 = db.query(User).filter(User.id == device.assigned_user_2_id).first()
         else:
             bank_id = device.bank_id or current_user.bank_id
             if bank_id:
@@ -497,8 +497,8 @@ def send_action(
         whatsapp_sent1 = False
         whatsapp_sent2 = False
         if getattr(device, "enable_whatsapp", True) is not False:
-            wa1 = getattr(device, "whatsapp_number_1", None) or getattr(u1, "whatsapp_number", None)
-            wa2 = getattr(device, "whatsapp_number_2", None) or getattr(u2, "whatsapp_number", None)
+            wa1 = getattr(u1, "whatsapp_number", None) or getattr(device, "whatsapp_number_1", None)
+            wa2 = getattr(u2, "whatsapp_number", None) or getattr(device, "whatsapp_number_2", None)
             if wa1 and enable_otp1:
                 whatsapp_sent1 = send_whatsapp_otp(wa1, otp1, device.name, otp_label="1st Authorization OTP")
             if wa2 and enable_otp2:
