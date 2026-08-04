@@ -1,4 +1,4 @@
-import datetime
+from app.utils.timezone import get_ist_now
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -23,8 +23,8 @@ class Branch(Base):
     enable_otp1 = Column(Boolean, default=True)
     enable_otp2 = Column(Boolean, default=True)
 
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
     # Relationships
     bank = relationship("Bank", back_populates="branches")

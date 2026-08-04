@@ -1,3 +1,4 @@
+from datetime import datetime
 import asyncio
 import json
 import logging
@@ -211,9 +212,9 @@ def get_global_otp_requests(
     device_ids = [d.id for d in devices]
     if not device_ids:
         return []
-
     import datetime
-    now = datetime.datetime.utcnow()
+    from app.utils.timezone import get_ist_now
+    now = get_ist_now()
     five_minutes_ago = now - datetime.timedelta(minutes=5)
 
     messages = []
@@ -457,7 +458,8 @@ def send_action(
             if u2.bank_id and u2.bank_id != current_user.bank_id:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User 2 must belong to your bank")
 
-        expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
+        from app.utils.timezone import get_ist_now
+        expires_at = get_ist_now() + datetime.timedelta(minutes=5)
 
         # 1st OTP: for User 1 if enabled
         if enable_otp1:

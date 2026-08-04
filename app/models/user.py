@@ -1,6 +1,6 @@
-import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
+from app.utils.timezone import get_ist_now
 from app.database import Base
 
 
@@ -16,8 +16,8 @@ class User(Base):
     role = Column(String(20), default="user")  # super_admin, admin, bank_admin, user
     bank_id = Column(Integer, ForeignKey("banks.id"), nullable=True)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
     bank = relationship("Bank", back_populates="users")
     branch = relationship("Branch", back_populates="users", foreign_keys=[branch_id])

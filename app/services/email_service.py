@@ -35,7 +35,8 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: st
         logger.warning("Invalid recipient email '%s' — skipping OTP email", to_email)
         return False
 
-    current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    from app.utils.timezone import get_ist_now
+    current_time_str = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
     subject = f"IP Camera Manager — {otp_label} for {device_name} - {current_time_str}"
 
     html_body = f"""

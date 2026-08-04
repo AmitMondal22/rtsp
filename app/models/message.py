@@ -1,4 +1,4 @@
-import datetime
+from app.utils.timezone import get_ist_now
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -14,7 +14,7 @@ class ThreadMessage(Base):
     message_type = Column(String(20), default="text")  # text, command, alert
     payload = Column(JSON, nullable=True)  # Extra JSON data payload
     is_mqtt_published = Column(Boolean, default=True)  # False for "No Thread" messages
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
 
     device = relationship("Device", back_populates="messages")
     sender = relationship("User", back_populates="messages")

@@ -101,7 +101,8 @@ def generate_otp_service(db: Session, device_id: int, user: User) -> dict:
         if assigned_u:
             target_user = assigned_u
 
-    now = datetime.datetime.utcnow()
+    from app.utils.timezone import get_ist_now
+    now = get_ist_now()
 
     # Rate limit: check if there's an unexpired, unused OTP for this device+target_user
     existing_otp = (
@@ -218,7 +219,8 @@ def verify_otp_service(db: Session, device_id: int, user: User, code: str) -> di
     device = get_device_by_id(db, device_id)
     check_device_access(device, user)
 
-    now = datetime.datetime.utcnow()
+    from app.utils.timezone import get_ist_now
+    now = get_ist_now()
     otp = (
         db.query(OTPCode)
         .filter(

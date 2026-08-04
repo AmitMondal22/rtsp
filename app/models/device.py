@@ -1,6 +1,6 @@
-import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
+from app.utils.timezone import get_ist_now
 from app.database import Base
 
 
@@ -50,8 +50,8 @@ class Device(Base):
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
     assigned_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     assigned_user_2_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
     owner = relationship("User", back_populates="devices", foreign_keys=[owner_id])
     bank = relationship("Bank", back_populates="devices")

@@ -24,8 +24,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] = None) -> str:
+    from app.utils.timezone import get_ist_now
     to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + (
+    expire = get_ist_now() + (
         expires_delta or datetime.timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
     )
     to_encode.update({"exp": expire})

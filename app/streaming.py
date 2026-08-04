@@ -123,7 +123,8 @@ async def check_device_health(
     )
 
     was_online = device.is_online
-    now = datetime.datetime.utcnow()
+    from app.utils.timezone import get_ist_now
+    now = get_ist_now()
 
     if reachable:
         device.is_online = True

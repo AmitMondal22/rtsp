@@ -7,6 +7,7 @@ services:
       POSTGRES_USER: ipcamera
       POSTGRES_PASSWORD: ipcamera123
       POSTGRES_DB: ipcamera
+      TZ: Asia/Kolkata
     ports:
       - "5432:5432"
     volumes:
@@ -31,6 +32,7 @@ services:
       - DB_NAME=ipcamera
       - JWT_SECRET_KEY=change-this-in-production-8a7f9b2c
       - DEBUG=false
+      - TZ=Asia/Kolkata
       - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-mosquitto}
       - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
       - MQTT_USERNAME=${MQTT_USERNAME}
