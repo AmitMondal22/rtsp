@@ -1,20 +1,25 @@
-from datetime import datetime
 import asyncio
+import datetime
 import json
 import logging
+import random
+import re
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.user import User
 from app.models.device import Device
 from app.models.message import ThreadMessage
+from app.models.otp import OTPCode
+from app.models.user import User
 from app.schemas.device import DeviceStreamOut
 from app.schemas.message import ThreadMessageCreate, ThreadMessageOut
 from app.schemas.otp import OTPGenerateOut, OTPVerifyIn, OTPVerifyOut, CameraActionRequest
 from app.services.auth_service import get_current_user
-from app.services.device_service import get_device_by_id, build_rtsp_url
 from app.services.camera_service import (
     get_thread_messages_service,
     send_thread_message_service,
@@ -22,12 +27,20 @@ from app.services.camera_service import (
     generate_otp_service,
     verify_otp_service,
 )
+from app.services.device_service import get_device_by_id, build_rtsp_url
+from app.services.email_service import send_otp_email
+from app.services.mqtt_service import publish_otp_to_device
+from app.services.whatsapp_service import send_whatsapp_otp
 from app.streaming import validate_rtsp_with_fallback
 from app.streaming_opencv import generate_mjpeg_frames, OpenCVCamera
 from app.controllers.device_controller import check_device_access
+from app.utils.timezone import get_ist_now
 
 logger = logging.getLogger("camera_controller")
 router = APIRouter(prefix="/api/camera", tags=["Camera"])
+
+# Shared executor for parallel OTP delivery (email + whatsapp)
+_otp_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="otp-send")
 
 active_camera_websockets: dict[int, list[WebSocket]] = {}
 
@@ -54,7 +67,31 @@ def get_stream_url(
     )
 
 
-# ── WebSocket Streaming (RTSP backend -> WebSocket frontend) ──
+# ── Disconnect Active Stream (call before reconnect after device update) ──
+@router.post("/{device_id}/disconnect")
+async def disconnect_device_stream(
+    device_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Close any active WebSocket/RTSP connections for a device so the socket is released before reconnect."""
+    device = get_device_by_id(db, device_id)
+    check_device_access(device, current_user)
+
+    closed_count = 0
+    for ws_list in list(active_camera_websockets.values()):
+        for ws in ws_list[:]:
+            try:
+                await ws.close(code=1000, reason="Device updated — reconnecting")
+                closed_count += 1
+            except Exception:
+                pass
+    active_camera_websockets.clear()
+
+    return {"disconnected": True, "connections_closed": closed_count, "device_id": device_id}
+
+
+
 @router.websocket("/{device_id}/ws")
 async def websocket_stream(
     websocket: WebSocket,
@@ -64,17 +101,16 @@ async def websocket_stream(
 ):
     """
     RTSP WebSocket live stream for a device.
-    Backend captures RTSP video via OpenCV and streams JPEG binary frames over WebSocket to frontend.
+    Backend captures RTSP via OpenCV and streams JPEG binary frames over WebSocket.
     """
     try:
         await websocket.accept()
     except Exception as e:
-        logger.warning(f"WebSocket accept failed: {e}")
+        logger.warning("WebSocket accept failed: %s", e)
         return
 
     camera = None
     try:
-        # Authenticate token if provided
         if token:
             try:
                 from app.services.auth_service import verify_token
@@ -91,7 +127,7 @@ async def websocket_stream(
             await websocket.close(code=1008, reason="Device not found")
             return
 
-        # Automatically close any existing camera websockets to disconnect unused RTSP camera streams
+        # Close any existing camera websockets (device changed)
         for dev_id, ws_list in list(active_camera_websockets.items()):
             for old_ws in ws_list[:]:
                 try:
@@ -100,57 +136,54 @@ async def websocket_stream(
                     pass
             active_camera_websockets[dev_id] = []
 
-        if device_id not in active_camera_websockets:
-            active_camera_websockets[device_id] = []
-        active_camera_websockets[device_id].append(websocket)
+        active_camera_websockets.setdefault(device_id, []).append(websocket)
 
         rtsp_url = build_rtsp_url(device)
         transport = device.transport or "tcp"
 
-        opened = False
-        for attempt in range(1, 4):
-            camera = OpenCVCamera(rtsp_url, transport=transport)
-            opened = await camera.open()
-            if opened:
-                break
-            logger.warning(f"WebSocket attempt {attempt}/3 to open camera stream for device {device_id} failed. Retrying...")
-            await asyncio.sleep(0.5)
+        # OpenCVCamera handles internal retries (3x) — no outer retry loop needed
+        camera = OpenCVCamera(rtsp_url, transport=transport)
+        opened = await camera.open()
 
-        if not opened or not camera:
+        if not opened:
             try:
                 await websocket.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream"}))
             except Exception:
                 pass
             await websocket.close(code=1011)
+            active_camera_websockets.get(device_id, []).discard if hasattr(list, 'discard') else None
             if websocket in active_camera_websockets.get(device_id, []):
                 active_camera_websockets[device_id].remove(websocket)
             return
 
         try:
             while True:
+                deadline = asyncio.get_event_loop().time() + (1.0 / 25.0)
                 jpeg_bytes = await camera.read_frame()
                 if jpeg_bytes is not None:
                     try:
                         await websocket.send_bytes(jpeg_bytes)
                     except (WebSocketDisconnect, RuntimeError, ConnectionResetError, asyncio.CancelledError):
-                        logger.info(f"WebSocket client disconnected for device {device_id}. Stopping camera stream.")
+                        logger.info("WebSocket client disconnected for device %d", device_id)
                         break
-                await asyncio.sleep(1.0 / 25.0)  # ~25 FPS ultra-fast
+                # Deadline pacing: sleep only remaining time after encode
+                remaining = deadline - asyncio.get_event_loop().time()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
         except WebSocketDisconnect:
-            logger.info(f"WebSocket disconnected for device {device_id}.")
+            logger.info("WebSocket disconnected for device %d", device_id)
         except Exception as e:
-            logger.warning(f"WebSocket streaming closed for device {device_id}: {e}")
+            logger.warning("WebSocket stream closed for device %d: %s", device_id, e)
     except Exception as outer_e:
-        logger.error(f"Unhandled websocket error for device {device_id}: {outer_e}")
+        logger.error("Unhandled websocket error for device %d: %s", device_id, outer_e)
     finally:
         try:
-            logger.info(f"Disconnecting backend RTSP camera resources for device {device_id}...")
             if websocket in active_camera_websockets.get(device_id, []):
                 active_camera_websockets[device_id].remove(websocket)
             if camera:
                 await camera.release_async()
-        except Exception as cleanup_e:
-            logger.warning(f"Cleanup error in websocket stream: {cleanup_e}")
+        except Exception as e:
+            logger.warning("Cleanup error in websocket stream: %s", e)
 
 
 
@@ -240,64 +273,72 @@ def get_global_otp_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all incoming OTP requests for devices owned by or accessible to the current user."""
-    from app.models.device import Device
-    from app.models.message import ThreadMessage
-
+    """Get all incoming OTP requests for devices accessible to the current user."""
+    # Build device filter based on role
     if current_user.role == "super_admin":
-        devices = db.query(Device).all()
+        device_ids = [d.id for d in db.query(Device.id).all()]
     elif current_user.bank_id:
-        devices = db.query(Device).filter(
-            (Device.bank_id == current_user.bank_id) |
-            (Device.assigned_user_id == current_user.id) |
-            (Device.owner_id == current_user.id)
-        ).all()
+        device_ids = [
+            d.id for d in db.query(Device.id).filter(
+                or_(
+                    Device.bank_id == current_user.bank_id,
+                    Device.assigned_user_id == current_user.id,
+                    Device.owner_id == current_user.id,
+                )
+            ).all()
+        ]
     else:
-        devices = db.query(Device).filter(
-            (Device.assigned_user_id == current_user.id) |
-            (Device.owner_id == current_user.id)
-        ).all()
+        device_ids = [
+            d.id for d in db.query(Device.id).filter(
+                or_(
+                    Device.assigned_user_id == current_user.id,
+                    Device.owner_id == current_user.id,
+                )
+            ).all()
+        ]
 
-    device_ids = [d.id for d in devices]
     if not device_ids:
         return []
 
-    import datetime
-    from app.utils.timezone import get_ist_now
     now = get_ist_now()
     five_minutes_ago = now - datetime.timedelta(minutes=5)
 
-    messages = []
-    for d_id in device_ids:
-        latest = (
-            db.query(ThreadMessage)
-            .filter(
-                ThreadMessage.device_id == d_id,
-                ThreadMessage.message_type == "otp_request",
-                ThreadMessage.created_at >= five_minutes_ago,
-            )
-            .order_by(ThreadMessage.created_at.desc())
-            .first()
+    # Single query: latest otp_request per device using a subquery
+    messages = (
+        db.query(ThreadMessage)
+        .filter(
+            ThreadMessage.device_id.in_(device_ids),
+            ThreadMessage.message_type == "otp_request",
+            ThreadMessage.created_at >= five_minutes_ago,
         )
-        if latest:
-            messages.append(latest)
+        .order_by(ThreadMessage.device_id, ThreadMessage.created_at.desc())
+        .all()
+    )
 
-    messages.sort(key=lambda m: m.created_at, reverse=True)
-
-    result = []
+    # Keep only the most recent per device (already sorted by device_id + desc created_at)
+    seen = set()
+    unique_messages = []
     for msg in messages:
-        dev = next((d for d in devices if d.id == msg.device_id), None)
-        out = {
+        if msg.device_id not in seen:
+            seen.add(msg.device_id)
+            unique_messages.append(msg)
+
+    # Build device lookup map (avoid N+1)
+    devices = db.query(Device).filter(Device.id.in_(device_ids)).all()
+    device_map = {d.id: d for d in devices}
+
+    return [
+        {
             "id": msg.id,
             "device_id": msg.device_id,
-            "device_name": dev.name if dev else f"Device #{msg.device_id}",
+            "device_name": device_map.get(msg.device_id, {}).name if device_map.get(msg.device_id) else f"Device #{msg.device_id}",
             "content": msg.content,
             "payload": msg.payload,
             "message_type": msg.message_type,
             "created_at": msg.created_at.isoformat(),
         }
-        result.append(out)
-    return result
+        for msg in unique_messages
+    ]
 
 
 # ── Thread Messages (via MQTT) ──
@@ -428,18 +469,14 @@ def send_action(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    import random
-    import datetime
-
     mode = (action_data.mode or "no_threat").lower()
     device = get_device_by_id(db, device_id)
     check_device_access(device, current_user)
 
-    from app.models.message import ThreadMessage
-    from app.utils.timezone import get_ist_now
     now = get_ist_now()
     five_minutes_ago = now - datetime.timedelta(minutes=5)
-    # Require an active unacknowledged hardware OTP request from the device
+
+    # Require an active unacknowledged hardware OTP request
     pending_req = (
         db.query(ThreadMessage)
         .filter(
@@ -454,10 +491,10 @@ def send_action(
     if not pending_req:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active pending hardware OTP request found for this device. OTP can only be sent once when a device request is pending."
+            detail="No active pending hardware OTP request found. OTP can only be sent once when a device request is pending."
         )
 
-    # Mark the hardware request as acknowledged (consumed, one-time send)
+    # Mark consumed (one-time send)
     pending_req.message_type = "otp_request_ack"
     db.commit()
 
@@ -473,61 +510,78 @@ def send_action(
         }
 
     elif mode == "no_threat":
-        # Generate two 4-digit OTPs
         otp1 = str(random.randint(1000, 9999))
         otp2 = str(random.randint(1000, 9999))
-
-        from app.models.otp import OTPCode
-        from app.services.email_service import send_otp_email
-        from app.services.mqtt_service import publish_otp_to_device
 
         u1_id = action_data.user_id_1
         u2_id = action_data.user_id_2
 
-        # 1. Resolve User 1 (1st OTP User: Branch's otp1_user_id / user1_id takes precedence)
+        # Collect candidate user IDs for a single bulk query
+        candidate_ids = []
         if u1_id:
-            u1 = db.query(User).filter(User.id == u1_id).first()
-        elif device.branch and device.branch.otp1_user_id:
-            u1 = db.query(User).filter(User.id == device.branch.otp1_user_id).first()
-        elif device.branch and device.branch.user1_id:
-            u1 = db.query(User).filter(User.id == device.branch.user1_id).first()
-        elif device.assigned_user_id:
-            u1 = db.query(User).filter(User.id == device.assigned_user_id).first()
-        else:
-            u1 = current_user
-
-        if not u1:
-            u1 = current_user
-
-        # 2. Resolve User 2 (2nd OTP User: Branch's otp2_user_id / user2_id takes precedence)
+            candidate_ids.append(u1_id)
         if u2_id:
-            u2 = db.query(User).filter(User.id == u2_id).first()
-        elif device.branch and device.branch.otp2_user_id:
-            u2 = db.query(User).filter(User.id == device.branch.otp2_user_id).first()
-        elif device.branch and device.branch.user2_id:
-            u2 = db.query(User).filter(User.id == device.branch.user2_id).first()
-        elif getattr(device, "assigned_user_2_id", None):
-            u2 = db.query(User).filter(User.id == device.assigned_user_2_id).first()
-        else:
+            candidate_ids.append(u2_id)
+        if device.branch:
+            for attr in ("otp1_user_id", "user1_id", "otp2_user_id", "user2_id"):
+                v = getattr(device.branch, attr, None)
+                if v:
+                    candidate_ids.append(v)
+        if device.assigned_user_id:
+            candidate_ids.append(device.assigned_user_id)
+        if getattr(device, "assigned_user_2_id", None):
+            candidate_ids.append(device.assigned_user_2_id)
+
+        # Single bulk user query
+        user_map: dict[int, User] = {}
+        if candidate_ids:
+            fetched = db.query(User).filter(User.id.in_(set(candidate_ids))).all()
+            user_map = {u.id: u for u in fetched}
+
+        # Resolve User 1
+        def _resolve_u1() -> User:
+            if u1_id and u1_id in user_map:
+                return user_map[u1_id]
+            if device.branch:
+                for attr in ("otp1_user_id", "user1_id"):
+                    uid = getattr(device.branch, attr, None)
+                    if uid and uid in user_map:
+                        return user_map[uid]
+            if device.assigned_user_id and device.assigned_user_id in user_map:
+                return user_map[device.assigned_user_id]
+            return current_user
+
+        # Resolve User 2
+        def _resolve_u2(u1: User) -> User:
+            if u2_id and u2_id in user_map:
+                return user_map[u2_id]
+            if device.branch:
+                for attr in ("otp2_user_id", "user2_id"):
+                    uid = getattr(device.branch, attr, None)
+                    if uid and uid in user_map:
+                        return user_map[uid]
+            if getattr(device, "assigned_user_2_id", None) and device.assigned_user_2_id in user_map:
+                return user_map[device.assigned_user_2_id]
+            # Fallback: any other bank user
             bank_id = device.bank_id or current_user.bank_id
             if bank_id:
                 u2 = db.query(User).filter(User.bank_id == bank_id, User.id != u1.id).first()
-            else:
-                u2 = db.query(User).filter(User.id != u1.id).first()
+                if u2:
+                    return u2
+            return u1
 
-        if not u2:
-            u2 = u1
+        u1 = _resolve_u1()
+        u2 = _resolve_u2(u1)
 
         # Check Branch OTP enable flags
-        enable_otp1 = True
-        enable_otp2 = True
-        if device.branch:
-            if getattr(device.branch, "enable_otp1", None) is False:
-                enable_otp1 = False
-            if getattr(device.branch, "enable_otp2", None) is False:
-                enable_otp2 = False
+        enable_otp1 = getattr(device.branch, "enable_otp1", True) if device.branch else True
+        enable_otp2 = getattr(device.branch, "enable_otp2", True) if device.branch else True
+        if enable_otp1 is None:
+            enable_otp1 = True
+        if enable_otp2 is None:
+            enable_otp2 = True
 
-        # Validation check for bank compatibility
+        # Bank compatibility check
         if current_user.role != "super_admin" and current_user.bank_id:
             if u1.bank_id and u1.bank_id != current_user.bank_id:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User 1 must belong to your bank")
@@ -536,50 +590,41 @@ def send_action(
 
         expires_at = now + datetime.timedelta(minutes=5)
 
-        # 1st OTP: for User 1 if enabled
         if enable_otp1:
-            db_otp1 = OTPCode(
-                device_id=device.id,
-                user_id=u1.id,
-                code=otp1,
-                expires_at=expires_at,
-            )
-            db.add(db_otp1)
-
-        # 2nd OTP: for User 2 if enabled
+            db.add(OTPCode(device_id=device.id, user_id=u1.id, code=otp1, expires_at=expires_at))
         if enable_otp2:
-            db_otp2 = OTPCode(
-                device_id=device.id,
-                user_id=u2.id,
-                code=otp2,
-                expires_at=expires_at,
-            )
-            db.add(db_otp2)
+            db.add(OTPCode(device_id=device.id, user_id=u2.id, code=otp2, expires_at=expires_at))
         db.commit()
 
-        # Publish to MQTT topic /OTP/{device.name}
+        # Publish to MQTT topic
         mqtt_sent = publish_otp_to_device(device.name, otp1 if enable_otp1 else "", otp2 if enable_otp2 else "")
 
-        # 1. Email Delivery (if enable_email is True and OTP enabled)
-        email_sent1 = False
-        email_sent2 = False
-        if getattr(device, "enable_email", True) is not False:
-            if enable_otp1:
-                email_sent1 = send_otp_email(u1.email, otp1, device.name, otp_label="1st Authorization OTP")
-            if enable_otp2:
-                email_sent2 = send_otp_email(u2.email, otp2, device.name, otp_label="2nd Authorization OTP")
+        # Parallel email + WhatsApp delivery via shared executor
+        enable_email = getattr(device, "enable_email", True) is not False
+        enable_wa = getattr(device, "enable_whatsapp", True) is not False
+        wa1 = getattr(u1, "whatsapp_number", None) or getattr(device, "whatsapp_number_1", None)
+        wa2 = getattr(u2, "whatsapp_number", None) or getattr(device, "whatsapp_number_2", None)
 
-        # 2. WhatsApp Delivery (if enable_whatsapp is True and OTP enabled)
-        from app.services.whatsapp_service import send_whatsapp_otp
-        whatsapp_sent1 = False
-        whatsapp_sent2 = False
-        if getattr(device, "enable_whatsapp", True) is not False:
-            wa1 = getattr(u1, "whatsapp_number", None) or getattr(device, "whatsapp_number_1", None)
-            wa2 = getattr(u2, "whatsapp_number", None) or getattr(device, "whatsapp_number_2", None)
-            if wa1 and enable_otp1:
-                whatsapp_sent1 = send_whatsapp_otp(wa1, otp1, device.name, otp_label="1st Authorization OTP")
-            if wa2 and enable_otp2:
-                whatsapp_sent2 = send_whatsapp_otp(wa2, otp2, device.name, otp_label="2nd Authorization OTP")
+        futures = {}
+        if enable_email and enable_otp1:
+            futures["email1"] = _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Authorization OTP")
+        if enable_email and enable_otp2:
+            futures["email2"] = _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Authorization OTP")
+        if enable_wa and wa1 and enable_otp1:
+            futures["wa1"] = _otp_executor.submit(send_whatsapp_otp, wa1, otp1, device.name, "1st Authorization OTP")
+        if enable_wa and wa2 and enable_otp2:
+            futures["wa2"] = _otp_executor.submit(send_whatsapp_otp, wa2, otp2, device.name, "2nd Authorization OTP")
+
+        def _safe_result(key):
+            try:
+                return futures[key].result(timeout=10) if key in futures else False
+            except Exception:
+                return False
+
+        email_sent1 = _safe_result("email1")
+        email_sent2 = _safe_result("email2")
+        whatsapp_sent1 = _safe_result("wa1")
+        whatsapp_sent2 = _safe_result("wa2")
 
         # Save ThreadMessage
         new_msg = ThreadMessage(

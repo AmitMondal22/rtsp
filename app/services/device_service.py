@@ -2,7 +2,7 @@ import re
 from urllib.parse import urlparse, unquote
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.device import Device
 from app.models.user import User
@@ -11,23 +11,28 @@ from app.schemas.device import DeviceCreate, DeviceUpdate
 
 def sanitize_rtsp_url(url: str) -> str:
     """
-    Clean up malformed RTSP URL prefixes while preserving valid hosts, ports, credentials, and stream paths.
+    Clean up malformed RTSP URL prefixes while preserving valid IP addresses, hosts, ports, credentials, and stream paths.
     
     Examples:
-      'rtsp://rtsp:554//stream.strba.sk:1935/strba/VYHLAD_JAZERO.stream' -> 'rtsp://stream.strba.sk:1935/strba/VYHLAD_JAZERO.stream'
-      'rtsp:554//stream.strba.sk:1935/strba/VYHLAD_JAZERO.stream'        -> 'rtsp://stream.strba.sk:1935/strba/VYHLAD_JAZERO.stream'
-      'rtsp://rtsp://admin:pass@192.168.1.100:554/live'                -> 'rtsp://admin:pass@192.168.1.100:554/live'
+      'rtsp://132.239.12.145/axis-media/media.amp'                -> 'rtsp://132.239.12.145/axis-media/media.amp'
+      'rtsp:554//stream.strba.sk:1935/strba/VYHLAD.stream'     -> 'rtsp://stream.strba.sk:1935/strba/VYHLAD.stream'
+      'rtsp://rtsp:554//stream.strba.sk:1935/strba/VYHLAD.stream' -> 'rtsp://stream.strba.sk:1935/strba/VYHLAD.stream'
     """
     if not url:
         return url
     url = url.strip()
 
-    # Replace garbage prefixes like 'rtsp://rtsp:554//', 'rtsp:554//', 'rtsp://rtsp://', etc.
-    pattern = r'^(?:rtsp:?/*)+(?:\d+/*)?(?:rtsp:?/*)*'
-    url = re.sub(pattern, 'rtsp://', url, flags=re.IGNORECASE)
+    # Fix duplicated schemes like 'rtsp://rtsp://' -> 'rtsp://'
+    url = re.sub(r'^(?:rtsp:?/*){2,}', 'rtsp://', url, flags=re.IGNORECASE)
 
+    # Fix 'rtsp:554//' or 'rtsp://rtsp:554//' or 'rtsp:554/' -> 'rtsp://'
+    url = re.sub(r'^rtsp:?(?::554|554)?/*rtsp:?/*(?:554)?/*', 'rtsp://', url, flags=re.IGNORECASE)
+    url = re.sub(r'^rtsp:554/+', 'rtsp://', url, flags=re.IGNORECASE)
+    url = re.sub(r'^rtsp://554/+', 'rtsp://', url, flags=re.IGNORECASE)
+
+    # Ensure valid scheme prefix
     if not url.lower().startswith("rtsp://") and not url.lower().startswith("rtsps://"):
-        url = "rtsp://" + url
+        url = "rtsp://" + url.lstrip('/')
 
     return url
 
@@ -79,33 +84,31 @@ def build_rtsp_url(device: Device) -> str:
     return f"rtsp://{host}:{port}{path}"
 
 
-def create_device_service(db: Session, device_data: DeviceCreate, user: User) -> Device:
+def create_device_service(db: Session, device_data: DeviceCreate, user: User) -> dict:
     rtsp_url = sanitize_rtsp_url(device_data.rtsp_url) if device_data.rtsp_url else None
 
     host = device_data.host
-    port = device_data.port
+    port = device_data.port or 554
     username = device_data.username
     password = device_data.password
-    stream_path = device_data.stream_path
+    stream_path = device_data.stream_path or "/stream1"
 
     # If full RTSP URL is provided, auto-parse missing fields from it
     if rtsp_url:
         parsed = parse_rtsp_url(rtsp_url)
-        if not host and parsed.get("host"):
+        if parsed.get("host"):
             host = parsed["host"]
-        if (not port or port == 554) and parsed.get("port"):
+        if parsed.get("port"):
             port = parsed["port"]
-        if not username and parsed.get("username"):
+        if parsed.get("username"):
             username = parsed["username"]
-        if not password and parsed.get("password"):
+        if parsed.get("password"):
             password = parsed["password"]
-        if (not stream_path or stream_path == "/stream1") and parsed.get("stream_path"):
+        if parsed.get("stream_path"):
             stream_path = parsed["stream_path"]
     elif host:
-        auth_part = ""
-        if username and password:
-            auth_part = f"{username}:{password}@"
-        rtsp_url = f"rtsp://{auth_part}{host}:{port or 554}{stream_path or '/stream1'}"
+        auth_part = f"{username}:{password}@" if username and password else ""
+        rtsp_url = f"rtsp://{auth_part}{host}:{port}{stream_path}"
 
     target_bank_id = device_data.bank_id or user.bank_id
     if not target_bank_id and device_data.assigned_user_id:
@@ -116,13 +119,13 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
     device = Device(
         name=device_data.name,
         device_type=device_data.device_type or "rtsp",
-        rtsp_url=rtsp_url,
+        rtsp_url=sanitize_rtsp_url(rtsp_url) if rtsp_url else None,
         host=host,
         port=port,
         username=username,
         password=password,
         stream_path=stream_path,
-        transport=device_data.transport,
+        transport=device_data.transport or "tcp",
         manufacturer=device_data.manufacturer,
         model=device_data.model,
         firmware_version=device_data.firmware_version,
@@ -142,7 +145,13 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
     )
     db.add(device)
     db.commit()
-    db.refresh(device)
+
+    device = (
+        db.query(Device)
+        .options(joinedload(Device.bank), joinedload(Device.branch))
+        .filter(Device.id == device.id)
+        .first()
+    )
     return format_device_out(device)
 
 
@@ -183,12 +192,14 @@ def format_device_out(device: Device) -> dict:
 
 
 def get_user_devices(db: Session, user: User) -> list[dict]:
+    """Fetch devices with bank/branch eagerly loaded to avoid N+1 lazy queries."""
+    opts = [joinedload(Device.bank), joinedload(Device.branch)]
     if user.role in ["super_admin", "admin"]:
-        devices = db.query(Device).all()
+        devices = db.query(Device).options(*opts).all()
     elif user.role == "bank_admin":
-        devices = db.query(Device).filter(Device.bank_id == user.bank_id).all()
+        devices = db.query(Device).options(*opts).filter(Device.bank_id == user.bank_id).all()
     else:
-        devices = db.query(Device).filter(
+        devices = db.query(Device).options(*opts).filter(
             (Device.assigned_user_id == user.id) | (Device.bank_id == user.bank_id)
         ).all()
     return [format_device_out(d) for d in devices]
@@ -205,7 +216,7 @@ def update_device_service(db: Session, device_id: int, update_data: DeviceUpdate
     device = get_device_by_id(db, device_id)
     update_dict = update_data.model_dump(exclude_unset=True)
 
-    # 1. If rtsp_url is provided in update, sanitize/strip and parse components
+    # 1. If rtsp_url is provided, sanitize and extract components
     if "rtsp_url" in update_dict and update_dict["rtsp_url"]:
         new_url = sanitize_rtsp_url(update_dict["rtsp_url"])
         update_dict["rtsp_url"] = new_url
@@ -215,30 +226,42 @@ def update_device_service(db: Session, device_id: int, update_data: DeviceUpdate
             update_dict["host"] = parsed["host"]
         if parsed.get("port"):
             update_dict["port"] = parsed["port"]
-        if parsed.get("username"):
-            update_dict["username"] = parsed["username"]
-        if parsed.get("password"):
-            update_dict["password"] = parsed["password"]
         if parsed.get("stream_path"):
             update_dict["stream_path"] = parsed["stream_path"]
+        
+        # Always update username/password to match the URL (None if no credentials in URL)
+        update_dict["username"] = parsed.get("username")
+        update_dict["password"] = parsed.get("password")
 
+    # 2. Apply all updates to device model
     for field, value in update_dict.items():
-        setattr(device, field, value)
+        if hasattr(device, field):
+            setattr(device, field, value)
+
+    # 3. If component fields updated without explicit rtsp_url, reconstruct rtsp_url
+    if "rtsp_url" not in update_dict and any(k in update_dict for k in ("host", "stream_path", "port", "username", "password")):
+        if device.host:
+            auth_part = f"{device.username}:{device.password}@" if device.username and device.password else ""
+            device.rtsp_url = f"rtsp://{auth_part}{device.host}:{device.port or 554}{device.stream_path or '/stream1'}"
+    elif device.rtsp_url:
+        device.rtsp_url = sanitize_rtsp_url(device.rtsp_url)
 
     if "assigned_user_id" in update_dict and update_dict["assigned_user_id"]:
         assigned_user = db.query(User).filter(User.id == update_dict["assigned_user_id"]).first()
         if assigned_user and assigned_user.bank_id:
             device.bank_id = assigned_user.bank_id
 
-    # If rtsp_url is empty but host exists, build RTSP URL from manual components
-    if not device.rtsp_url and device.host:
-        auth_part = ""
-        if device.username and device.password:
-            auth_part = f"{device.username}:{device.password}@"
-        device.rtsp_url = f"rtsp://{auth_part}{device.host}:{device.port or 554}{device.stream_path or '/stream1'}"
-
+    # 4. Save and commit explicitly to devices table
+    db.add(device)
     db.commit()
-    db.refresh(device)
+
+    # Re-fetch with bank/branch eagerly loaded
+    device = (
+        db.query(Device)
+        .options(joinedload(Device.bank), joinedload(Device.branch))
+        .filter(Device.id == device_id)
+        .first()
+    )
     return format_device_out(device)
 
 

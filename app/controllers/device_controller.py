@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.models.user import User
@@ -13,6 +13,7 @@ from app.services.device_service import (
     update_device_service,
     delete_device_service,
     assign_device_service,
+    format_device_out,
 )
 
 router = APIRouter(prefix="/api/devices", tags=["Devices"])
@@ -33,10 +34,12 @@ def check_device_admin_access(device: Device, user: User):
         return
     if user.role == "bank_admin" and device.bank_id == user.bank_id:
         return
+    if user.role == "user" and (device.assigned_user_id == user.id or device.owner_id == user.id or device.bank_id == user.bank_id):
+        return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
-@router.post("/", response_model=DeviceOut)
+@router.post("/")
 def create_device(
     device: DeviceCreate,
     db: Session = Depends(get_db),
@@ -72,18 +75,25 @@ def list_all_devices(
 
 
 
-@router.get("/{device_id}", response_model=DeviceOut)
+@router.get("/{device_id}")
 def get_device(
     device_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    device = get_device_by_id(db, device_id)
+    device = (
+        db.query(Device)
+        .options(joinedload(Device.bank), joinedload(Device.branch))
+        .filter(Device.id == device_id)
+        .first()
+    )
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
     check_device_access(device, current_user)
-    return device
+    return format_device_out(device)
 
 
-@router.put("/{device_id}", response_model=DeviceOut)
+@router.put("/{device_id}")
 def update_device(
     device_id: int,
     device_update: DeviceUpdate,

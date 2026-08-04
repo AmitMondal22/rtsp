@@ -12,8 +12,10 @@ from app.models.message import ThreadMessage
 from app.models.otp import OTPCode
 from app.schemas.message import ThreadMessageCreate
 from app.services.device_service import get_device_by_id
-
 from app.services.email_service import send_otp_email
+from app.services.mqtt_service import publish_otp_to_device
+from app.services.whatsapp_service import send_whatsapp_otp
+from app.utils.timezone import get_ist_now
 
 
 def check_device_access(device: Device, user: User) -> None:
@@ -79,8 +81,6 @@ def send_message_no_mqtt_service(
     return new_msg
 
 
-from app.services.whatsapp_service import send_whatsapp_otp
-
 # ── OTP ──
 
 def generate_otp_service(db: Session, device_id: int, user: User) -> dict:
@@ -101,7 +101,6 @@ def generate_otp_service(db: Session, device_id: int, user: User) -> dict:
         if assigned_u:
             target_user = assigned_u
 
-    from app.utils.timezone import get_ist_now
     now = get_ist_now()
 
     # Rate limit: check if there's an unexpired, unused OTP for this device+target_user

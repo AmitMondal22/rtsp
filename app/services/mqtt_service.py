@@ -1,8 +1,8 @@
 import os
 import json
 import logging
+import threading
 import paho.mqtt.client as mqtt
-from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.device import Device
 from app.models.message import ThreadMessage
@@ -12,19 +12,24 @@ logger = logging.getLogger("mqtt")
 
 mqtt_client = None
 
+
 def on_connect(client, userdata, flags, rc):
-    logger.info(f"MQTT Connected with result code {rc}")
-    print(f"[MQTT] Connected with result code {rc}")
-    client.subscribe("/OTP/REQUEST/#")
+    if rc == 0:
+        logger.info("MQTT connected successfully")
+        client.subscribe("/OTP/REQUEST/#", qos=1)
+    else:
+        logger.warning("MQTT connection failed with code %d", rc)
+
+
+def on_disconnect(client, userdata, rc):
+    if rc != 0:
+        logger.warning("MQTT unexpected disconnect (code %d) — will auto-reconnect", rc)
+
 
 def on_message(client, userdata, msg):
-    logger.info(f"MQTT Message received on topic: {msg.topic}")
-    print(f"[MQTT] Message received on topic: {msg.topic}")
+    logger.info("MQTT message on topic: %s", msg.topic)
     try:
         payload_str = msg.payload.decode("utf-8")
-        logger.info(f"MQTT Payload: {payload_str}")
-        print(f"[MQTT] Payload: {payload_str}")
-        
         try:
             data = json.loads(payload_str)
         except Exception:
@@ -32,11 +37,13 @@ def on_message(client, userdata, msg):
 
         db = SessionLocal()
         try:
-            # Topic format example: /OTP/REQUEST/0000200043
+            # Topic format: /OTP/REQUEST/DEVICENAME
             parts = msg.topic.strip("/").split("/")
-            device_name = parts[-1] if len(parts) > 1 else "0000200043"
+            device_name = parts[-1] if len(parts) > 1 else None
 
-            device = db.query(Device).filter(Device.name == device_name).first()
+            device = None
+            if device_name:
+                device = db.query(Device).filter(Device.name == device_name).first()
             if not device:
                 device = db.query(Device).first()
 
@@ -44,7 +51,7 @@ def on_message(client, userdata, msg):
                 ack_msg = ThreadMessage(
                     device_id=device.id,
                     sender_id=device.owner_id or 1,
-                    content=f"OTP Request received from {device.name} via topic {msg.topic}",
+                    content=f"OTP Request received from {device.name} via {msg.topic}",
                     message_type="otp_request",
                     payload={
                         "topic": msg.topic,
@@ -52,19 +59,17 @@ def on_message(client, userdata, msg):
                         "data": data,
                         "status": "Pending",
                         "device_name": device.name,
-                    }
+                    },
                 )
                 db.add(ack_msg)
                 db.commit()
-                logger.info(f"[MQTT] OTP Request Acknowledgment saved for device {device.name}")
-                print(f"[MQTT] OTP Request Acknowledgment saved for device {device.name}")
+                logger.info("OTP request saved for device %s", device.name)
+            else:
+                logger.warning("No device found for MQTT topic %s", msg.topic)
         finally:
             db.close()
     except Exception as e:
-        logger.error(f"Error processing MQTT message: {e}")
-        print(f"[MQTT] Error processing MQTT message: {e}")
-
-import threading
+        logger.error("Error processing MQTT message: %s", e)
 
 
 def _connect_async():
@@ -74,31 +79,35 @@ def _connect_async():
     broker_host = settings.MQTT_BROKER_HOST
     broker_port = settings.MQTT_BROKER_PORT
     try:
-        mqtt_client.connect(broker_host, broker_port, keepalive=30)
+        mqtt_client.connect(broker_host, broker_port, keepalive=60)
         mqtt_client.loop_start()
-        logger.info(f"MQTT Client loop started, broker={broker_host}:{broker_port}")
-        print(f"[MQTT] Connected to broker {broker_host}:{broker_port}")
+        logger.info("MQTT loop started, broker=%s:%d", broker_host, broker_port)
     except Exception as e:
-        logger.warning(f"Could not connect to MQTT broker {broker_host}:{broker_port}: {e}")
+        logger.warning("Could not connect to MQTT broker %s:%d: %s", broker_host, broker_port, e)
         try:
-            mqtt_client.connect("localhost", 1883, keepalive=30)
+            mqtt_client.connect("localhost", 1883, keepalive=60)
             mqtt_client.loop_start()
-            logger.info("MQTT Client loop started, broker=localhost:1883")
+            logger.info("MQTT loop started (fallback localhost:1883)")
         except Exception:
-            logger.info("MQTT broker offline — packet publishing will queue or log locally.")
+            logger.info("MQTT broker offline — publishing will fail silently")
 
 
 def start_mqtt_client():
     global mqtt_client
-    mqtt_client = mqtt.Client()
+    import socket
+    # A stable client_id is required when clean_session=False (broker needs to retain session)
+    client_id = f"ipcamera-{socket.gethostname()[:20]}"
+    mqtt_client = mqtt.Client(client_id=client_id, clean_session=False)
     mqtt_client.on_connect = on_connect
+    mqtt_client.on_disconnect = on_disconnect
     mqtt_client.on_message = on_message
-    
+    # Exponential backoff reconnect: min 1s, max 30s
+    mqtt_client.reconnect_delay_set(min_delay=1, max_delay=30)
+
     if settings.MQTT_USERNAME:
         mqtt_client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD or "")
 
-    t = threading.Thread(target=_connect_async, daemon=True)
-    t.start()
+    threading.Thread(target=_connect_async, daemon=True, name="mqtt-connect").start()
 
 
 def stop_mqtt_client():
@@ -110,29 +119,26 @@ def stop_mqtt_client():
         except Exception:
             pass
         mqtt_client = None
-        logger.info("MQTT Client disconnected")
+        logger.info("MQTT client disconnected")
 
-def publish_otp_to_device(device_name: str, otp1: str, otp2: str = ""):
+
+def publish_otp_to_device(device_name: str, otp1: str, otp2: str = "") -> bool:
     global mqtt_client
     if not mqtt_client:
         logger.error("MQTT client not initialized")
         return False
-    
-    clean_device_name = (device_name or "0000200043").strip().lstrip("/")
-    if clean_device_name.startswith("OTP/"):
-        topic = f"/{clean_device_name}"
-    else:
-        topic = f"/OTP/{clean_device_name}"
-    
+
+    clean_device_name = (device_name or "").strip().lstrip("/")
+    topic = f"/OTP/{clean_device_name}" if not clean_device_name.startswith("OTP/") else f"/{clean_device_name}"
+
     val2 = otp2 if otp2 else otp1
     payload = f"*OTP, ,{otp1},{val2}#"
-    
+
     try:
         info = mqtt_client.publish(topic, payload, qos=1)
         info.wait_for_publish()
-        logger.info(f"Published OTP packet to topic {topic}: {payload}")
-        print(f"[MQTT] Published OTP packet to topic {topic}: {payload}")
+        logger.info("Published OTP to %s: %s", topic, payload)
         return True
     except Exception as e:
-        logger.error(f"Failed to publish MQTT message to topic {topic}: {e}")
+        logger.error("Failed to publish MQTT message to %s: %s", topic, e)
         return False

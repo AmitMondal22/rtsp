@@ -299,21 +299,46 @@ function stopAllStreams() {
 }
 
 
-// Poll OTP requests every 5 seconds
+// Smart OTP request poller — pauses when OTP panel is not visible
 let otpRequestsInterval = null;
+let _otpPanelVisible = true;
 
 async function loadOtpRequests() {
     if (!state.token) return;
     try {
         const requests = await api("/api/camera/otp-requests");
-        console.log("Requests: ", requests);
         state.otpRequests = requests;
         renderOtpRequests(requests);
         updateSendButtonState();
     } catch (err) {
-        console.error("Failed to load OTP requests:", err);
+        // Silently ignore — polling errors are non-fatal
     }
 }
+
+function startOtpPolling() {
+    if (otpRequestsInterval) return; // already running
+    loadOtpRequests();
+    otpRequestsInterval = setInterval(() => {
+        if (_otpPanelVisible) {
+            loadOtpRequests();
+        }
+    }, 5000);
+}
+
+function stopOtpPolling() {
+    if (otpRequestsInterval) {
+        clearInterval(otpRequestsInterval);
+        otpRequestsInterval = null;
+    }
+}
+
+// Pause polling when tab/window is hidden, resume when visible
+document.addEventListener("visibilitychange", () => {
+    _otpPanelVisible = !document.hidden;
+    if (!document.hidden) {
+        loadOtpRequests(); // immediate refresh on tab focus
+    }
+});
 
 function renderOtpRequests(requests) {
     const list = qs("#otp-requests-list");
@@ -456,15 +481,10 @@ async function init() {
     }
 
     try {
-        loadOtpRequests();
-        if (otpRequestsInterval) clearInterval(otpRequestsInterval);
-        otpRequestsInterval = setInterval(loadOtpRequests, 5000);
+        startOtpPolling();
     } catch (err) {
         console.error("OTP polling warning:", err);
     }
-
-    if (state.sendButtonInterval) clearInterval(state.sendButtonInterval);
-    state.sendButtonInterval = setInterval(updateSendButtonState, 1000);
 }
 
 // ══════════════════════════════════════════
@@ -845,47 +865,58 @@ qs("#close-device-modal-btn")?.addEventListener("click", () => {
 function getDeviceFormData() {
     const name = qs("#device-name").value.trim();
     let rtsp_url = qs("#device-rtsp").value.trim();
-    const device_type = "rtsp";
-    
-    // Auto-prepend rtsp:// scheme if omitted
-    if (rtsp_url && !rtsp_url.toLowerCase().startsWith("rtsp://") && !rtsp_url.toLowerCase().startsWith("rtsps://")) {
-        rtsp_url = "rtsp://" + rtsp_url;
-    }
 
-    // Automatically parse components from RTSP URL
-    let host = null, port = 554, username = null, password = null, stream_path = "/stream1";
     if (rtsp_url) {
-        const parsed = parseRtspUrl(rtsp_url);
-        if (parsed) {
-            host = parsed.host;
-            port = parsed.port || 554;
-            username = parsed.username;
-            password = parsed.password;
-            stream_path = parsed.stream_path || "/stream1";
+        rtsp_url = rtsp_url.replace(/^(?:rtsp:?\/*)+(?:554\/*|8554\/*)?(?:rtsp:?\/*)*/i, 'rtsp://');
+        if (rtsp_url && !rtsp_url.toLowerCase().startsWith("rtsp://") && !rtsp_url.toLowerCase().startsWith("rtsps://")) {
+            rtsp_url = "rtsp://" + rtsp_url;
         }
     }
 
-    const location = qs("#device-location").value.trim();
-    const manufacturer = qs("#device-manufacturer").value.trim();
+    const payload = {
+        name,
+        device_type: "rtsp",
+        transport: "tcp",
+    };
+
+    if (rtsp_url) {
+        payload.rtsp_url = rtsp_url;
+        const parsed = parseRtspUrl(rtsp_url);
+        if (parsed) {
+            if (parsed.host) payload.host = parsed.host;
+            if (parsed.port) payload.port = parsed.port;
+            if (parsed.username) payload.username = parsed.username;
+            if (parsed.password) payload.password = parsed.password;
+            if (parsed.stream_path) payload.stream_path = parsed.stream_path;
+        }
+    }
+
+    const location = qs("#device-location")?.value.trim();
+    if (location) payload.location = location;
+
+    const manufacturer = qs("#device-manufacturer")?.value.trim();
+    if (manufacturer) payload.manufacturer = manufacturer;
 
     const existingDevice = editingDeviceId ? (state.devices || []).find(d => d.id === editingDeviceId) : null;
 
-    const bankVal = qs("#device-bank-id") ? qs("#device-bank-id").value : "";
+    const bankVal = qs("#device-bank-id")?.value;
     let bank_id = bankVal ? parseInt(bankVal) : null;
     if (!bank_id && existingDevice && existingDevice.bank_id) {
         bank_id = existingDevice.bank_id;
     }
+    if (bank_id) payload.bank_id = bank_id;
 
-    const branchVal = qs("#device-branch-id") ? qs("#device-branch-id").value : "";
+    const branchVal = qs("#device-branch-id")?.value;
     let branch_id = branchVal ? parseInt(branchVal) : null;
     if (!branch_id && existingDevice && existingDevice.branch_id) {
         branch_id = existingDevice.branch_id;
     }
+    if (branch_id) payload.branch_id = branch_id;
 
-    const enable_email = qs("#device-enable-email") ? qs("#device-enable-email").checked : true;
-    const enable_whatsapp = qs("#device-enable-whatsapp") ? qs("#device-enable-whatsapp").checked : true;
+    if (qs("#device-enable-email")) payload.enable_email = qs("#device-enable-email").checked;
+    if (qs("#device-enable-whatsapp")) payload.enable_whatsapp = qs("#device-enable-whatsapp").checked;
 
-    return { name, rtsp_url, device_type, host, port, username, password, stream_path, transport: "tcp", location, manufacturer, bank_id, branch_id, enable_email, enable_whatsapp };
+    return payload;
 }
 
 
@@ -908,14 +939,29 @@ qs("#save-device-btn").addEventListener("click", async () => {
         if (editingDeviceId) {
             if (!data.password && !data.rtsp_url) delete data.password;
 
+            const prevDeviceId = editingDeviceId;
             const device = await api(`/api/devices/${editingDeviceId}`, {
                 method: "PUT",
                 body: JSON.stringify(data),
             });
+
+            // Stop the existing RTSP stream immediately so backend releases the old socket
+            stopAllStreams();
+
+            // Signal backend to close the active RTSP WebSocket (releases old OpenCV socket)
+            try {
+                await api(`/api/camera/${prevDeviceId}/disconnect`, { method: "POST" });
+            } catch (_) {}
+
             await loadDevices();
             qs("#add-device-form").classList.add("hidden");
             await resetDeviceForm();
-            selectDevice(device.id);
+
+            // Short delay lets backend fully release the old RTSP socket before new WS connects
+            setTimeout(() => {
+                selectDevice(device.id);
+            }, 500);
+
             showToast(`Device "${device.name}" updated!`);
         } else {
             const device = await api("/api/devices/", {

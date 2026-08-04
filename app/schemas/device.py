@@ -49,14 +49,8 @@ class DeviceCreate(BaseModel):
     def validate_rtsp_url(cls, v: Optional[str]) -> Optional[str]:
         if not v:
             return v
-        v = re.sub(r'^rtsp:\d+//', 'rtsp://', v.strip(), flags=re.IGNORECASE)
-        if not v.lower().startswith("rtsp://") and not v.lower().startswith("rtsps://"):
-            if not v.startswith("http://") and not v.startswith("https://"):
-                v = "rtsp://" + v
-            else:
-                raise ValueError("RTSP URL must start with rtsp:// or rtsps://")
-        v = re.sub(r'(://[^@/]*@)?([^/:]+):(/)', r'\1\2:554\3', v)
-        return v
+        from app.services.device_service import sanitize_rtsp_url
+        return sanitize_rtsp_url(v)
 
 
 class DeviceUpdate(BaseModel):
@@ -99,14 +93,8 @@ class DeviceUpdate(BaseModel):
     def validate_rtsp_url(cls, v: Optional[str]) -> Optional[str]:
         if not v:
             return v
-        v = re.sub(r'^rtsp:\d+//', 'rtsp://', v.strip(), flags=re.IGNORECASE)
-        if not v.lower().startswith("rtsp://") and not v.lower().startswith("rtsps://"):
-            if not v.startswith("http://") and not v.startswith("https://"):
-                v = "rtsp://" + v
-            else:
-                raise ValueError("RTSP URL must start with rtsp:// or rtsps://")
-        v = re.sub(r'(://[^@/]*@)?([^/:]+):(/)', r'\1\2:554\3', v)
-        return v
+        from app.services.device_service import sanitize_rtsp_url
+        return sanitize_rtsp_url(v)
 
 
 class DeviceAssign(BaseModel):
