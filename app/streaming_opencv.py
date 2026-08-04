@@ -13,6 +13,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+import json
+from fastapi import WebSocket
 
 import cv2
 
@@ -160,6 +162,148 @@ class OpenCVCamera:
             pass
 
 
+class CameraBroadcaster:
+    """
+    Multi-client stream broadcaster for a single camera device_id.
+
+    Maintains exactly ONE RTSP VideoCapture connection to the physical IP camera,
+    and broadcasts incoming JPEG frames to all connected WebSockets and MJPEG stream clients.
+    """
+    def __init__(self, device_id: int, rtsp_url: str, transport: str = "tcp"):
+        self.device_id = device_id
+        self.rtsp_url = rtsp_url
+        self.transport = transport
+        self._subscribers: set[asyncio.Queue] = set()
+        self._websockets: set[WebSocket] = set()
+        self._task: Optional[asyncio.Task] = None
+        self._camera: Optional[OpenCVCamera] = None
+        self._lock = asyncio.Lock()
+        self._last_frame: Optional[bytes] = None
+
+    async def add_websocket(self, websocket: WebSocket) -> None:
+        async with self._lock:
+            self._websockets.add(websocket)
+            if self._task is None or self._task.done():
+                self._start_capture_loop()
+
+    async def remove_websocket(self, websocket: WebSocket) -> None:
+        async with self._lock:
+            self._websockets.discard(websocket)
+
+    def subscribe_queue(self) -> asyncio.Queue:
+        q = asyncio.Queue(maxsize=5)
+        if self._last_frame:
+            try:
+                q.put_nowait(self._last_frame)
+            except Exception:
+                pass
+        self._subscribers.add(q)
+        if self._task is None or self._task.done():
+            self._start_capture_loop()
+        return q
+
+    def unsubscribe_queue(self, q: asyncio.Queue) -> None:
+        self._subscribers.discard(q)
+
+    def _start_capture_loop(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._run_capture_loop())
+
+    async def _run_capture_loop(self) -> None:
+        logger.info("[Broadcaster %d] Starting single RTSP capture loop for URL: %s", self.device_id, self.rtsp_url)
+        self._camera = OpenCVCamera(self.rtsp_url, transport=self.transport)
+        opened = await self._camera.open()
+        if not opened:
+            logger.warning("[Broadcaster %d] Failed to open RTSP stream", self.device_id)
+            for ws in list(self._websockets):
+                try:
+                    await ws.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream"}))
+                except Exception:
+                    pass
+            self._task = None
+            return
+
+        try:
+            while self._websockets or self._subscribers:
+                deadline = asyncio.get_event_loop().time() + FRAME_DELAY
+                frame_bytes = await self._camera.read_frame()
+                if frame_bytes is None:
+                    await asyncio.sleep(0.1)
+                    continue
+
+                self._last_frame = frame_bytes
+
+                # Broadcast to WebSockets
+                stale_ws = []
+                for ws in list(self._websockets):
+                    try:
+                        await ws.send_bytes(frame_bytes)
+                    except Exception:
+                        stale_ws.append(ws)
+
+                for ws in stale_ws:
+                    self._websockets.discard(ws)
+
+                # Broadcast to Queues (MJPEG streams)
+                stale_q = []
+                for q in list(self._subscribers):
+                    try:
+                        if q.full():
+                            try:
+                                q.get_nowait()
+                            except Exception:
+                                pass
+                        q.put_nowait(frame_bytes)
+                    except Exception:
+                        stale_q.append(q)
+
+                for q in stale_q:
+                    self._subscribers.discard(q)
+
+                remaining = deadline - asyncio.get_event_loop().time()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning("[Broadcaster %d] Capture loop exception: %s", self.device_id, e)
+        finally:
+            logger.info("[Broadcaster %d] Stopping single RTSP capture loop", self.device_id)
+            if self._camera:
+                await self._camera.release_async()
+                self._camera = None
+            self._task = None
+
+
+class CameraBroadcasterHub:
+    """Registry for camera broadcasters indexed by device_id."""
+    def __init__(self):
+        self._broadcasters: dict[int, CameraBroadcaster] = {}
+        self._lock = threading.Lock()
+
+    def get_broadcaster(self, device_id: int, rtsp_url: str, transport: str = "tcp") -> CameraBroadcaster:
+        with self._lock:
+            bc = self._broadcasters.get(device_id)
+            if bc and bc.rtsp_url != rtsp_url:
+                if bc._task and not bc._task.done():
+                    bc._task.cancel()
+                bc = None
+
+            if bc is None:
+                bc = CameraBroadcaster(device_id, rtsp_url, transport=transport)
+                self._broadcasters[device_id] = bc
+            return bc
+
+    def close_broadcaster(self, device_id: int) -> None:
+        with self._lock:
+            bc = self._broadcasters.pop(device_id, None)
+            if bc and bc._task and not bc._task.done():
+                bc._task.cancel()
+
+
+camera_broadcaster_hub = CameraBroadcasterHub()
+
+
 async def generate_mjpeg_frames(
     rtsp_url: str,
     transport: str = "tcp",
@@ -168,8 +312,6 @@ async def generate_mjpeg_frames(
 ):
     """
     Async generator yielding MJPEG multipart frames from an RTSP camera.
-    Uses deadline-based pacing (vs naive sleep-after-encode) so slow encodes
-    don't compound frame delay.
     """
     boundary = b"--frame\r\n"
     content_type = b"Content-Type: image/jpeg\r\n\r\n"
@@ -197,7 +339,6 @@ async def generate_mjpeg_frames(
 
                 yield boundary + content_type + jpeg_bytes + b"\r\n"
 
-                # Deadline-based sleep: subtract time already spent encoding
                 remaining = deadline - asyncio.get_event_loop().time()
                 if remaining > 0:
                     await asyncio.sleep(remaining)
@@ -244,3 +385,4 @@ def stop_auto_cleanup():
     if _cleanup_task and not _cleanup_task.done():
         _cleanup_task.cancel()
         _cleanup_task = None
+

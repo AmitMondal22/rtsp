@@ -74,21 +74,14 @@ async def disconnect_device_stream(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Close any active WebSocket/RTSP connections for a device so the socket is released before reconnect."""
+    """Close any active broadcaster connections for a device so the socket is released before reconnect."""
     device = get_device_by_id(db, device_id)
     check_device_access(device, current_user)
 
-    closed_count = 0
-    for ws_list in list(active_camera_websockets.values()):
-        for ws in ws_list[:]:
-            try:
-                await ws.close(code=1000, reason="Device updated — reconnecting")
-                closed_count += 1
-            except Exception:
-                pass
-    active_camera_websockets.clear()
+    from app.streaming_opencv import camera_broadcaster_hub
+    camera_broadcaster_hub.close_broadcaster(device_id)
 
-    return {"disconnected": True, "connections_closed": closed_count, "device_id": device_id}
+    return {"disconnected": True, "device_id": device_id}
 
 
 
@@ -101,7 +94,7 @@ async def websocket_stream(
 ):
     """
     RTSP WebSocket live stream for a device.
-    Backend captures RTSP via OpenCV and streams JPEG binary frames over WebSocket.
+    Uses multi-client camera broadcaster so multiple users/browsers/locations stream simultaneously.
     """
     try:
         await websocket.accept()
@@ -109,7 +102,8 @@ async def websocket_stream(
         logger.warning("WebSocket accept failed: %s", e)
         return
 
-    camera = None
+    from app.streaming_opencv import camera_broadcaster_hub
+
     try:
         if token:
             try:
@@ -127,66 +121,26 @@ async def websocket_stream(
             await websocket.close(code=1008, reason="Device not found")
             return
 
-        # Close any existing camera websockets (device changed)
-        for dev_id, ws_list in list(active_camera_websockets.items()):
-            for old_ws in ws_list[:]:
-                try:
-                    await old_ws.close(code=1000, reason="Device changed")
-                except Exception:
-                    pass
-            active_camera_websockets[dev_id] = []
-
-        active_camera_websockets.setdefault(device_id, []).append(websocket)
-
         rtsp_url = build_rtsp_url(device)
-
-        # OpenCVCamera handles internal retries (3x) — no outer retry loop needed
-        camera = OpenCVCamera(rtsp_url, transport="tcp")
-        opened = await camera.open()
-
-        if not opened:
-            try:
-                await websocket.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream"}))
-            except Exception:
-                pass
-            await websocket.close(code=1011)
-            active_camera_websockets.get(device_id, []).discard if hasattr(list, 'discard') else None
-            if websocket in active_camera_websockets.get(device_id, []):
-                active_camera_websockets[device_id].remove(websocket)
-            return
+        broadcaster = camera_broadcaster_hub.get_broadcaster(device_id, rtsp_url, transport="tcp")
+        await broadcaster.add_websocket(websocket)
 
         try:
             while True:
-                deadline = asyncio.get_event_loop().time() + (1.0 / 25.0)
-                jpeg_bytes = await camera.read_frame()
-                if jpeg_bytes is not None:
-                    try:
-                        await websocket.send_bytes(jpeg_bytes)
-                    except (WebSocketDisconnect, RuntimeError, ConnectionResetError, asyncio.CancelledError):
-                        logger.info("WebSocket client disconnected for device %d", device_id)
-                        break
-                # Deadline pacing: sleep only remaining time after encode
-                remaining = deadline - asyncio.get_event_loop().time()
-                if remaining > 0:
-                    await asyncio.sleep(remaining)
+                # Keep WebSocket open until client closes tab/connection
+                await websocket.receive_text()
         except WebSocketDisconnect:
-            logger.info("WebSocket disconnected for device %d", device_id)
+            pass
         except Exception as e:
-            logger.warning("WebSocket stream closed for device %d: %s", device_id, e)
+            logger.info("WebSocket closed for device %d: %s", device_id, e)
+        finally:
+            await broadcaster.remove_websocket(websocket)
+
     except Exception as outer_e:
         logger.error("Unhandled websocket error for device %d: %s", device_id, outer_e)
-    finally:
-        try:
-            if websocket in active_camera_websockets.get(device_id, []):
-                active_camera_websockets[device_id].remove(websocket)
-            if camera:
-                await camera.release_async()
-        except Exception as e:
-            logger.warning("Cleanup error in websocket stream: %s", e)
 
 
-
-# ── MJPEG Streaming (reliable fallback) ──
+# ── MJPEG Streaming (reliable fallback for multi-client) ──
 @router.get("/{device_id}/mjpeg")
 def mjpeg_stream(
     device_id: int,
@@ -195,16 +149,31 @@ def mjpeg_stream(
 ):
     """
     MJPEG live stream for a device.
-    Returns multipart/x-mixed-replace JPEG frames.
+    Uses camera broadcaster to share frames across multiple HTTP clients.
     """
     try:
         device = get_device_by_id(db, device_id)
         check_device_access(device, current_user)
 
         rtsp_url = build_rtsp_url(device)
+        from app.streaming_opencv import camera_broadcaster_hub
+        broadcaster = camera_broadcaster_hub.get_broadcaster(device_id, rtsp_url, transport="tcp")
+
+        async def mjpeg_generator():
+            q = broadcaster.subscribe_queue()
+            boundary = b"--frame\r\n"
+            content_type = b"Content-Type: image/jpeg\r\n\r\n"
+            try:
+                while True:
+                    frame = await q.get()
+                    yield boundary + content_type + frame + b"\r\n"
+            except asyncio.CancelledError:
+                pass
+            finally:
+                broadcaster.unsubscribe_queue(q)
 
         return StreamingResponse(
-            generate_mjpeg_frames(rtsp_url, transport="tcp"),
+            mjpeg_generator(),
             media_type="multipart/x-mixed-replace; boundary=frame",
         )
     except Exception as e:
