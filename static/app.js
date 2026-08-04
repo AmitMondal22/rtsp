@@ -654,10 +654,7 @@ function showDeviceView(device) {
 function renderDeviceConfig(device) {
     const bar = qs("#device-config-display");
     const configs = [
-        { label: "Host", value: device.host || "—" },
-        { label: "Port", value: device.port || 554 },
-        { label: "Stream", value: device.stream_path || "/stream1" },
-        { label: "Transport", value: device.transport || "tcp" },
+        { label: "RTSP Stream URL", value: device.rtsp_url || "Auto-configured" },
         { label: "Type", value: "RTSP Connection" },
     ];
 
@@ -682,23 +679,7 @@ function updateFormFields() {
 // Listen for device connection type changes
 qs("#device-type").addEventListener("change", updateFormFields);
 
-// ── Auto-parse RTSP URL into components ──
-function parseRtspUrl(url) {
-    if (!url || !url.toLowerCase().startsWith("rtsp://")) return null;
-    try {
-        const httpUrl = url.replace(/^rtsp:\/\//i, "http://");
-        const urlObj = new URL(httpUrl);
-        return {
-            host: urlObj.hostname || null,
-            port: urlObj.port ? parseInt(urlObj.port) : 554,
-            username: urlObj.username ? decodeURIComponent(urlObj.username) : null,
-            password: urlObj.password ? decodeURIComponent(urlObj.password) : null,
-            stream_path: (urlObj.pathname || "/stream1") + (urlObj.search || ""),
-        };
-    } catch (e) {
-        return null;
-    }
-}
+
 
 // Auto-populate helper
 async function loadBanksAndBranchesForDeviceForm() {
@@ -876,20 +857,8 @@ function getDeviceFormData() {
     const payload = {
         name,
         device_type: "rtsp",
-        transport: "tcp",
+        rtsp_url: rtsp_url || null,
     };
-
-    if (rtsp_url) {
-        payload.rtsp_url = rtsp_url;
-        const parsed = parseRtspUrl(rtsp_url);
-        if (parsed) {
-            if (parsed.host) payload.host = parsed.host;
-            if (parsed.port) payload.port = parsed.port;
-            if (parsed.username) payload.username = parsed.username;
-            if (parsed.password) payload.password = parsed.password;
-            if (parsed.stream_path) payload.stream_path = parsed.stream_path;
-        }
-    }
 
     const location = qs("#device-location")?.value.trim();
     if (location) payload.location = location;

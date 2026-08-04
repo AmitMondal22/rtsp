@@ -1,5 +1,4 @@
 import datetime
-import re
 from pydantic import BaseModel, field_validator
 from typing import Optional, Any
 
@@ -7,23 +6,18 @@ from typing import Optional, Any
 class DeviceCreate(BaseModel):
     name: str
     device_type: str = "rtsp"
-    # Connection details
-    host: Optional[str] = None
-    port: int = 554
-    username: Optional[str] = None
-    password: Optional[str] = None
-    stream_path: str = "/stream1"
-    transport: str = "tcp"
-    # Alternative: full RTSP URL
     rtsp_url: Optional[str] = None
+
     # Metadata
     manufacturer: Optional[str] = None
     model: Optional[str] = None
     firmware_version: Optional[str] = None
+
     # Location
     location: Optional[str] = None
     latitude: Optional[str] = None
     longitude: Optional[str] = None
+
     # Extra
     extra_config: Optional[dict[str, Any]] = None
     bank_id: Optional[int] = None
@@ -37,13 +31,6 @@ class DeviceCreate(BaseModel):
 
     model_config = {"extra": "ignore"}
 
-    @field_validator("transport")
-    @classmethod
-    def validate_transport(cls, v: str) -> str:
-        if v not in ("tcp", "udp", "http"):
-            raise ValueError("Transport must be tcp, udp, or http")
-        return v
-
     @field_validator("rtsp_url")
     @classmethod
     def validate_rtsp_url(cls, v: Optional[str]) -> Optional[str]:
@@ -55,12 +42,6 @@ class DeviceCreate(BaseModel):
 
 class DeviceUpdate(BaseModel):
     name: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    stream_path: Optional[str] = None
-    transport: Optional[str] = None
     rtsp_url: Optional[str] = None
     manufacturer: Optional[str] = None
     model: Optional[str] = None
@@ -79,15 +60,6 @@ class DeviceUpdate(BaseModel):
 
     model_config = {"extra": "ignore"}
 
-    @field_validator("transport")
-    @classmethod
-    def validate_transport(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        if v not in ("tcp", "udp", "http"):
-            raise ValueError("Transport must be tcp, udp, or http")
-        return v
-
     @field_validator("rtsp_url")
     @classmethod
     def validate_rtsp_url(cls, v: Optional[str]) -> Optional[str]:
@@ -105,11 +77,6 @@ class DeviceOut(BaseModel):
     id: int
     name: str
     device_type: str
-    host: Optional[str] = None
-    port: int = 554
-    username: Optional[str] = None
-    stream_path: str = "/stream1"
-    transport: str = "tcp"
     rtsp_url: Optional[str] = None
     manufacturer: Optional[str] = None
     model: Optional[str] = None
@@ -137,9 +104,9 @@ class DeviceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-
 class DeviceStreamOut(BaseModel):
     device_id: int
     name: str
     rtsp_url: str
     mjpeg_url: str
+

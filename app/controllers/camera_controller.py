@@ -139,10 +139,9 @@ async def websocket_stream(
         active_camera_websockets.setdefault(device_id, []).append(websocket)
 
         rtsp_url = build_rtsp_url(device)
-        transport = device.transport or "tcp"
 
         # OpenCVCamera handles internal retries (3x) — no outer retry loop needed
-        camera = OpenCVCamera(rtsp_url, transport=transport)
+        camera = OpenCVCamera(rtsp_url, transport="tcp")
         opened = await camera.open()
 
         if not opened:
@@ -203,10 +202,9 @@ def mjpeg_stream(
         check_device_access(device, current_user)
 
         rtsp_url = build_rtsp_url(device)
-        transport = device.transport or "tcp"
 
         return StreamingResponse(
-            generate_mjpeg_frames(rtsp_url, transport=transport),
+            generate_mjpeg_frames(rtsp_url, transport="tcp"),
             media_type="multipart/x-mixed-replace; boundary=frame",
         )
     except Exception as e:
@@ -233,10 +231,9 @@ def test_stream(
     check_device_access(device, current_user)
 
     rtsp_url = build_rtsp_url(device)
-    transport = device.transport or "tcp"
 
     # Set RTSP transport
-    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{transport}"
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 
     cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
     if not cap.isOpened():

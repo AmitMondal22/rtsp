@@ -1,6 +1,4 @@
 import re
-from urllib.parse import urlparse, unquote
-
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
@@ -11,16 +9,17 @@ from app.schemas.device import DeviceCreate, DeviceUpdate
 
 def sanitize_rtsp_url(url: str) -> str:
     """
-    Clean up malformed RTSP URL prefixes while preserving valid IP addresses, hosts, ports, credentials, and stream paths.
-    
-    Examples:
-      'rtsp://132.239.12.145/axis-media/media.amp'                -> 'rtsp://132.239.12.145/axis-media/media.amp'
-      'rtsp:554//stream.strba.sk:1935/strba/VYHLAD.stream'     -> 'rtsp://stream.strba.sk:1935/strba/VYHLAD.stream'
-      'rtsp://rtsp:554//stream.strba.sk:1935/strba/VYHLAD.stream' -> 'rtsp://stream.strba.sk:1935/strba/VYHLAD.stream'
+    Sanitize and extract clean RTSP URL from any input string (including ffplay commands or raw URLs).
+    Supports all camera types (Hikvision, Dahua, Uniview, Axis, Reolink, TP-Link, MediaMTX, GStreamer, FFmpeg, IPv6, URL-encoded credentials, etc.).
     """
     if not url:
         return url
     url = url.strip()
+
+    # Extract rtsp:// or rtsps:// if embedded inside a command string like 'ffplay -rtsp_transport tcp rtsp://...'
+    match = re.search(r'(rtsps?://\S+)', url, flags=re.IGNORECASE)
+    if match:
+        url = match.group(1)
 
     # Fix duplicated schemes like 'rtsp://rtsp://' -> 'rtsp://'
     url = re.sub(r'^(?:rtsp:?/*){2,}', 'rtsp://', url, flags=re.IGNORECASE)
@@ -37,78 +36,15 @@ def sanitize_rtsp_url(url: str) -> str:
     return url
 
 
-def parse_rtsp_url(url: str) -> dict:
-    """
-    Parse an RTSP URL into component parts.
-    Supports query parameters (?channel=1&subtype=1) and URL-decoded credentials (%40, %23, etc.)
-
-    Example: rtsp://admin:pass%40123@192.168.1.108:554/cam/realmonitor?channel=1&subtype=1
-    Returns: {host: '192.168.1.108', port: 554, username: 'admin',
-              password: 'pass@123', stream_path: '/cam/realmonitor?channel=1&subtype=1'}
-    """
-    result = {"host": None, "port": 554, "username": None, "password": None, "stream_path": "/stream1"}
-    if not url:
-        return result
-
-    cleaned_url = sanitize_rtsp_url(url)
-    if not cleaned_url.startswith("rtsp://"):
-        return result
-
-    try:
-        http_url = re.sub(r'^rtsp://', 'http://', cleaned_url, flags=re.IGNORECASE)
-        parsed = urlparse(http_url)
-        result["host"] = parsed.hostname
-        result["port"] = parsed.port or 554
-        result["username"] = unquote(parsed.username) if parsed.username else None
-        result["password"] = unquote(parsed.password) if parsed.password else None
-
-        path_str = parsed.path or "/stream1"
-        if parsed.query:
-            path_str = f"{path_str}?{parsed.query}"
-        result["stream_path"] = path_str
-    except Exception:
-        pass
-
-    return result
-
-
 def build_rtsp_url(device: Device) -> str:
-    """Return the sanitized device RTSP stream URL."""
+    """Return the clean RTSP stream connection URL directly from database."""
     if device.rtsp_url and device.rtsp_url.strip():
         return sanitize_rtsp_url(device.rtsp_url)
-    host = device.host or "localhost"
-    port = device.port or 554
-    path = device.stream_path or "/stream1"
-    if device.username and device.password:
-        return f"rtsp://{device.username}:{device.password}@{host}:{port}{path}"
-    return f"rtsp://{host}:{port}{path}"
+    return "rtsp://localhost:554/stream1"
 
 
 def create_device_service(db: Session, device_data: DeviceCreate, user: User) -> dict:
     rtsp_url = sanitize_rtsp_url(device_data.rtsp_url) if device_data.rtsp_url else None
-
-    host = device_data.host
-    port = device_data.port or 554
-    username = device_data.username
-    password = device_data.password
-    stream_path = device_data.stream_path or "/stream1"
-
-    # If full RTSP URL is provided, auto-parse missing fields from it
-    if rtsp_url:
-        parsed = parse_rtsp_url(rtsp_url)
-        if parsed.get("host"):
-            host = parsed["host"]
-        if parsed.get("port"):
-            port = parsed["port"]
-        if parsed.get("username"):
-            username = parsed["username"]
-        if parsed.get("password"):
-            password = parsed["password"]
-        if parsed.get("stream_path"):
-            stream_path = parsed["stream_path"]
-    elif host:
-        auth_part = f"{username}:{password}@" if username and password else ""
-        rtsp_url = f"rtsp://{auth_part}{host}:{port}{stream_path}"
 
     target_bank_id = device_data.bank_id or user.bank_id
     if not target_bank_id and device_data.assigned_user_id:
@@ -119,13 +55,7 @@ def create_device_service(db: Session, device_data: DeviceCreate, user: User) ->
     device = Device(
         name=device_data.name,
         device_type=device_data.device_type or "rtsp",
-        rtsp_url=sanitize_rtsp_url(rtsp_url) if rtsp_url else None,
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        stream_path=stream_path,
-        transport=device_data.transport or "tcp",
+        rtsp_url=rtsp_url,
         manufacturer=device_data.manufacturer,
         model=device_data.model,
         firmware_version=device_data.firmware_version,
@@ -160,11 +90,6 @@ def format_device_out(device: Device) -> dict:
         "id": device.id,
         "name": device.name,
         "device_type": device.device_type,
-        "host": device.host,
-        "port": device.port or 554,
-        "username": device.username,
-        "stream_path": device.stream_path or "/stream1",
-        "transport": device.transport or "tcp",
         "rtsp_url": device.rtsp_url,
         "manufacturer": device.manufacturer,
         "model": device.model,
@@ -216,46 +141,21 @@ def update_device_service(db: Session, device_id: int, update_data: DeviceUpdate
     device = get_device_by_id(db, device_id)
     update_dict = update_data.model_dump(exclude_unset=True)
 
-    # 1. If rtsp_url is provided, sanitize and extract components
     if "rtsp_url" in update_dict and update_dict["rtsp_url"]:
-        new_url = sanitize_rtsp_url(update_dict["rtsp_url"])
-        update_dict["rtsp_url"] = new_url
+        update_dict["rtsp_url"] = sanitize_rtsp_url(update_dict["rtsp_url"])
 
-        parsed = parse_rtsp_url(new_url)
-        if parsed.get("host"):
-            update_dict["host"] = parsed["host"]
-        if parsed.get("port"):
-            update_dict["port"] = parsed["port"]
-        if parsed.get("stream_path"):
-            update_dict["stream_path"] = parsed["stream_path"]
-        
-        # Always update username/password to match the URL (None if no credentials in URL)
-        update_dict["username"] = parsed.get("username")
-        update_dict["password"] = parsed.get("password")
-
-    # 2. Apply all updates to device model
     for field, value in update_dict.items():
         if hasattr(device, field):
             setattr(device, field, value)
-
-    # 3. If component fields updated without explicit rtsp_url, reconstruct rtsp_url
-    if "rtsp_url" not in update_dict and any(k in update_dict for k in ("host", "stream_path", "port", "username", "password")):
-        if device.host:
-            auth_part = f"{device.username}:{device.password}@" if device.username and device.password else ""
-            device.rtsp_url = f"rtsp://{auth_part}{device.host}:{device.port or 554}{device.stream_path or '/stream1'}"
-    elif device.rtsp_url:
-        device.rtsp_url = sanitize_rtsp_url(device.rtsp_url)
 
     if "assigned_user_id" in update_dict and update_dict["assigned_user_id"]:
         assigned_user = db.query(User).filter(User.id == update_dict["assigned_user_id"]).first()
         if assigned_user and assigned_user.bank_id:
             device.bank_id = assigned_user.bank_id
 
-    # 4. Save and commit explicitly to devices table
     db.add(device)
     db.commit()
 
-    # Re-fetch with bank/branch eagerly loaded
     device = (
         db.query(Device)
         .options(joinedload(Device.bank), joinedload(Device.branch))
@@ -287,4 +187,5 @@ def assign_device_service(db: Session, device_id: int, user_id: int) -> dict:
     db.commit()
     db.refresh(device)
     return format_device_out(device)
+
 

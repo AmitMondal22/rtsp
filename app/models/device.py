@@ -11,14 +11,8 @@ class Device(Base):
     name = Column(String(100), nullable=False)
     device_type = Column(String(50), default="rtsp")  # rtsp connection
 
-    # RTSP / connection configuration
+    # RTSP connection configuration
     rtsp_url = Column(String(500), nullable=True)
-    host = Column(String(100), nullable=True)
-    port = Column(Integer, default=554)
-    username = Column(String(100), nullable=True)
-    password = Column(String(100), nullable=True)
-    stream_path = Column(String(200), default="/stream1")
-    transport = Column(String(20), default="tcp")  # tcp, udp, http
 
     # Camera metadata
     manufacturer = Column(String(100), nullable=True)

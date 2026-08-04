@@ -27,13 +27,18 @@ def auto_migrate():
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_version VARCHAR(50);",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS latitude VARCHAR(20);",
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS longitude VARCHAR(20);",
+            "ALTER TABLE devices DROP COLUMN IF EXISTS host;",
+            "ALTER TABLE devices DROP COLUMN IF EXISTS port;",
+            "ALTER TABLE devices DROP COLUMN IF EXISTS username;",
+            "ALTER TABLE devices DROP COLUMN IF EXISTS password;",
+            "ALTER TABLE devices DROP COLUMN IF EXISTS stream_path;",
+            "ALTER TABLE devices DROP COLUMN IF EXISTS transport;",
             "ALTER TABLE branches ADD COLUMN IF NOT EXISTS enable_otp1 BOOLEAN DEFAULT TRUE;",
             "ALTER TABLE branches ADD COLUMN IF NOT EXISTS enable_otp2 BOOLEAN DEFAULT TRUE;",
             "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;",
             "ALTER TABLE users DROP CONSTRAINT IF EXISTS ix_users_username;",
             "DROP INDEX IF EXISTS ix_users_username;",
             "CREATE INDEX IF NOT EXISTS ix_users_username ON users (username);",
-            "UPDATE devices SET rtsp_url = 'rtsp://' || SUBSTRING(rtsp_url FROM POSITION('//' IN rtsp_url) + 2) WHERE rtsp_url LIKE 'rtsp:%//%';",
         ]
         for query in migrations:
             try:
