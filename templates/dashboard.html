@@ -212,6 +212,7 @@
                         class="flex-1 flex flex-col min-h-0 bg-brand-sidebar border border-brand-border rounded-lg overflow-hidden relative">
                         <!-- Stream Status Overlay -->
                         <div class="flex-1 flex flex-col relative justify-center items-center">
+                            <canvas id="camera-feed-canvas" class="w-full h-full object-contain bg-black hidden"></canvas>
                             <img id="camera-feed-mjpeg" class="w-full h-full object-contain bg-black hidden"
                                 alt="Surveillance Stream" />
                             <div id="stream-status"
@@ -548,7 +549,7 @@
 
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="/static/app.js?v=1.2"></script>
+    <script src="/static/app.js?v=2.3"></script>
 </body>
 
 </html>

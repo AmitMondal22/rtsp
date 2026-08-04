@@ -32,8 +32,8 @@ def auto_migrate():
             "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;",
             "ALTER TABLE users DROP CONSTRAINT IF EXISTS ix_users_username;",
             "DROP INDEX IF EXISTS ix_users_username;",
-            "CREATE INDEX IF EXISTS ix_users_username ON users (username);",
-
+            "CREATE INDEX IF NOT EXISTS ix_users_username ON users (username);",
+            "UPDATE devices SET rtsp_url = 'rtsp://' || SUBSTRING(rtsp_url FROM POSITION('//' IN rtsp_url) + 2) WHERE rtsp_url LIKE 'rtsp:%//%';",
         ]
         for query in migrations:
             try:
@@ -82,12 +82,41 @@ def seed_database():
         db.close()
 
 
+def cleanup_device_rtsp_urls():
+    from app.database import SessionLocal
+    from app.models.device import Device
+    from app.services.device_service import sanitize_rtsp_url
+
+    db = SessionLocal()
+    try:
+        devices = db.query(Device).all()
+        updated_count = 0
+        for dev in devices:
+            if dev.rtsp_url:
+                cleaned = sanitize_rtsp_url(dev.rtsp_url)
+                if cleaned != dev.rtsp_url:
+                    print(f"[DB Cleanup] Corrected RTSP URL for device {dev.id} ({dev.name}): '{dev.rtsp_url}' -> '{cleaned}'")
+                    dev.rtsp_url = cleaned
+                    updated_count += 1
+        if updated_count > 0:
+            db.commit()
+            print(f"[DB Cleanup] Successfully updated {updated_count} device RTSP URLs.")
+    except Exception as e:
+        print(f"[DB Cleanup] Warning cleaning device RTSP URLs: {e}")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create DB tables and auto-migrate missing columns
-    Base.metadata.create_all(bind=engine)
-    auto_migrate()
-    seed_database()
+    try:
+        Base.metadata.create_all(bind=engine)
+        auto_migrate()
+        cleanup_device_rtsp_urls()
+        seed_database()
+    except Exception as db_err:
+        print(f"[DB Startup Warning] {db_err}")
 
     # Start RTSP health monitor (background device connectivity checks)
     try:
@@ -103,8 +132,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[MQTT] Client failed: {e}")
 
+    # Start automatic background stream cleaner
+    try:
+        from app.streaming_opencv import start_auto_cleanup, stop_auto_cleanup
+        start_auto_cleanup()
+        print("[RTSP] Auto resource cleaner started")
+    except Exception as e:
+        print(f"[RTSP] Auto resource cleaner init failed: {e}")
+
     yield
     # Shutdown
+
+    # Stop automatic background stream cleaner
+    try:
+        stop_auto_cleanup()
+        print("[RTSP] Auto resource cleaner stopped")
+    except Exception:
+        pass
 
     # Stop RTSP health monitor
     try:

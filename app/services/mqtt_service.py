@@ -44,13 +44,13 @@ def on_message(client, userdata, msg):
                 ack_msg = ThreadMessage(
                     device_id=device.id,
                     sender_id=device.owner_id or 1,
-                    content=f"OTP Request Acknowledged from {device.name} via topic {msg.topic}",
-                    message_type="otp_request_ack",
+                    content=f"OTP Request received from {device.name} via topic {msg.topic}",
+                    message_type="otp_request",
                     payload={
                         "topic": msg.topic,
                         "raw_payload": payload_str,
                         "data": data,
-                        "status": "Acknowledged",
+                        "status": "Pending",
                         "device_name": device.name,
                     }
                 )
@@ -64,36 +64,52 @@ def on_message(client, userdata, msg):
         logger.error(f"Error processing MQTT message: {e}")
         print(f"[MQTT] Error processing MQTT message: {e}")
 
-def start_mqtt_client():
+import threading
+
+
+def _connect_async():
     global mqtt_client
+    if not mqtt_client:
+        return
     broker_host = settings.MQTT_BROKER_HOST
     broker_port = settings.MQTT_BROKER_PORT
-    
+    try:
+        mqtt_client.connect(broker_host, broker_port, keepalive=30)
+        mqtt_client.loop_start()
+        logger.info(f"MQTT Client loop started, broker={broker_host}:{broker_port}")
+        print(f"[MQTT] Connected to broker {broker_host}:{broker_port}")
+    except Exception as e:
+        logger.warning(f"Could not connect to MQTT broker {broker_host}:{broker_port}: {e}")
+        try:
+            mqtt_client.connect("localhost", 1883, keepalive=30)
+            mqtt_client.loop_start()
+            logger.info("MQTT Client loop started, broker=localhost:1883")
+        except Exception:
+            logger.info("MQTT broker offline — packet publishing will queue or log locally.")
+
+
+def start_mqtt_client():
+    global mqtt_client
     mqtt_client = mqtt.Client()
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
     
     if settings.MQTT_USERNAME:
         mqtt_client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD or "")
-    
-    try:
-        mqtt_client.connect(broker_host, broker_port, 60)
-        mqtt_client.loop_start()
-        logger.info(f"MQTT Client loop started, broker={broker_host}:{broker_port}")
-    except Exception as e:
-        logger.warning(f"Could not connect to configured MQTT broker {broker_host}:{broker_port}, trying localhost: {e}")
-        try:
-            mqtt_client.connect("localhost", 1883, 60)
-            mqtt_client.loop_start()
-            logger.info("MQTT Client loop started, broker=localhost:1883")
-        except Exception as e2:
-            logger.error(f"Failed to connect to MQTT broker on both {broker_host}:{broker_port} and localhost:1883: {e2}")
+
+    t = threading.Thread(target=_connect_async, daemon=True)
+    t.start()
+
 
 def stop_mqtt_client():
     global mqtt_client
     if mqtt_client:
-        mqtt_client.loop_stop()
-        mqtt_client.disconnect()
+        try:
+            mqtt_client.loop_stop()
+            mqtt_client.disconnect()
+        except Exception:
+            pass
+        mqtt_client = None
         logger.info("MQTT Client disconnected")
 
 def publish_otp_to_device(device_name: str, otp1: str, otp2: str = ""):

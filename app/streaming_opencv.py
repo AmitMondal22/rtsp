@@ -14,20 +14,24 @@ import cv2
 logger = logging.getLogger("streaming_opencv")
 
 # JPEG quality (0-100, higher = better)
-JPEG_QUALITY = 80
+JPEG_QUALITY = 75
 # Target framerate (fps)
-TARGET_FPS = 15
+TARGET_FPS = 25
 FRAME_DELAY = 1.0 / TARGET_FPS
 # Frame dimensions for resize
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 
 # OpenCV CAP_PROP_FFMPEG_CMD_PREFIX constant (value 85)
-# Some builds may not define this, so use the raw value as fallback
 try:
     CAP_PROP_FFMPEG_CMD_PREFIX = cv2.CAP_PROP_FFMPEG_CMD_PREFIX
 except AttributeError:
     CAP_PROP_FFMPEG_CMD_PREFIX = 85
+
+
+import threading
+
+_capture_lock = threading.Lock()
 
 
 class OpenCVCamera:
@@ -48,31 +52,52 @@ class OpenCVCamera:
         self._cap: Optional[cv2.VideoCapture] = None
 
     def _open_sync(self) -> bool:
-        """Open the RTSP stream synchronously (runs in thread pool)."""
-        self._release_sync()
+        """Open the RTSP stream synchronously with thread safety and ultra-fast FFmpeg flags."""
+        with _capture_lock:
+            self._release_sync_locked()
 
-        # Set RTSP transport option in environment for FFmpeg backend
-        try:
-            import os
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{self.transport or 'tcp'}"
-        except Exception as e:
-            logger.warning("Could not set FFMPEG capture options env: %s", e)
+            try:
+                import os
+                t_str = self.transport or "tcp"
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                    f"rtsp_transport;{t_str}|"
+                    "fflags;nobuffer|flags;low_delay|max_delay;500000|"
+                    "probesize;500000|analyzeduration;500000|reorder_queue_size;0|stimeout;3000000"
+                )
+            except Exception as e:
+                logger.warning("Could not set FFMPEG capture options env: %s", e)
 
-        self._cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+            # Retry up to 3 times with brief pause for socket release
+            for attempt in range(1, 4):
+                try:
+                    self._cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+                except Exception as cap_err:
+                    logger.warning("OpenCV VideoCapture exception on attempt %d: %s", attempt, cap_err)
+                    self._cap = None
 
-        # Reduce buffer for lower latency
-        try:
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        except Exception:
-            pass
+                if self._cap is not None:
+                    # Force minimal 1-frame buffer for real-time low latency
+                    try:
+                        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except Exception:
+                        pass
 
-        if not self._cap.isOpened():
-            logger.warning("OpenCV failed to open RTSP: %s", self.rtsp_url)
-            self._cap = None
+                    if self._cap.isOpened():
+                        logger.info("OpenCV camera opened successfully: %s (attempt %d)", self.rtsp_url, attempt)
+                        return True
+
+                logger.warning("OpenCV attempt %d failed to open RTSP: %s. Retrying...", attempt, self.rtsp_url)
+                if self._cap:
+                    try:
+                        self._cap.release()
+                    except Exception:
+                        pass
+                    self._cap = None
+                import time
+                time.sleep(0.3)
+
+            logger.error("OpenCV failed to open RTSP after retries: %s", self.rtsp_url)
             return False
-
-        logger.info("OpenCV camera opened: %s (transport=%s)", self.rtsp_url, self.transport)
-        return True
 
     def _read_frame_sync(self) -> Optional[bytes]:
         """
@@ -82,30 +107,42 @@ class OpenCVCamera:
         if self._cap is None:
             return None
 
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
-            logger.warning("OpenCV frame read failed")
+        try:
+            ret, frame = self._cap.read()
+            if not ret or frame is None:
+                logger.warning("OpenCV frame read failed")
+                return None
+
+            # Fast hardware-optimized linear resize
+            if frame.shape[1] != FRAME_WIDTH or frame.shape[0] != FRAME_HEIGHT:
+                frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_LINEAR)
+
+            # Fast JPEG encoding
+            ret, jpeg_data = cv2.imencode(".jpg", frame, [
+                cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY,
+            ])
+            if not ret:
+                return None
+
+            return jpeg_data.tobytes()
+        except Exception as frame_err:
+            logger.warning("Exception reading frame from OpenCV: %s", frame_err)
             return None
 
-        # Resize frame to reduce bandwidth
-        if frame.shape[1] != FRAME_WIDTH or frame.shape[0] != FRAME_HEIGHT:
-            frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_AREA)
-
-        # Encode to JPEG
-        ret, jpeg_data = cv2.imencode(".jpg", frame, [
-            cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY,
-        ])
-        if not ret:
-            return None
-
-        return jpeg_data.tobytes()
+    def _release_sync_locked(self) -> None:
+        """Release the camera resource synchronously while holding _capture_lock."""
+        if self._cap is not None:
+            try:
+                self._cap.release()
+                logger.debug("OpenCV camera released successfully")
+            except Exception as e:
+                logger.warning("Error releasing OpenCV capture: %s", e)
+            self._cap = None
 
     def _release_sync(self) -> None:
-        """Release the camera resource synchronously."""
-        if self._cap is not None:
-            self._cap.release()
-            self._cap = None
-            logger.debug("OpenCV camera released")
+        """Release the camera resource synchronously under lock."""
+        with _capture_lock:
+            self._release_sync_locked()
 
     async def open(self) -> bool:
         """Open the RTSP stream asynchronously."""
@@ -122,12 +159,8 @@ class OpenCVCamera:
         self._release_sync()
 
     async def release_async(self) -> None:
-        """Release the camera resource asynchronously in thread pool."""
-        try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._release_sync)
-        except Exception:
-            self._release_sync()
+        """Release the camera resource asynchronously without blocking thread pool."""
+        self._release_sync()
 
 
     @property
@@ -187,3 +220,41 @@ async def generate_mjpeg_frames(
             await asyncio.sleep(reconnect_delay * attempt)
         else:
             return
+
+
+import gc
+
+_cleanup_task: Optional[asyncio.Task] = None
+
+
+async def _auto_cleanup_loop():
+    """
+    Background worker that runs every 30 seconds to clean up unreferenced RTSP sockets,
+    garbage-collect closed OpenCV frame objects, and prevent memory growth without server restarts.
+    """
+    logger.info("Automatic RTSP resource cleaner started")
+    while True:
+        try:
+            await asyncio.sleep(30)
+            # Run garbage collection under capture lock to free unreferenced VideoCapture handles
+            with _capture_lock:
+                gc.collect()
+            logger.debug("Automatic stream memory and socket cleanup performed")
+        except asyncio.CancelledError:
+            logger.info("Automatic RTSP resource cleaner stopped")
+            break
+        except Exception as e:
+            logger.warning("Error in auto cleanup worker: %s", e)
+
+
+def start_auto_cleanup():
+    global _cleanup_task
+    if _cleanup_task is None or _cleanup_task.done():
+        _cleanup_task = asyncio.create_task(_auto_cleanup_loop())
+
+
+def stop_auto_cleanup():
+    global _cleanup_task
+    if _cleanup_task and not _cleanup_task.done():
+        _cleanup_task.cancel()
+        _cleanup_task = None

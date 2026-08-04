@@ -29,6 +29,8 @@ from app.controllers.device_controller import check_device_access
 logger = logging.getLogger("camera_controller")
 router = APIRouter(prefix="/api/camera", tags=["Camera"])
 
+active_camera_websockets: dict[int, list[WebSocket]] = {}
+
 
 # ── Stream URL ──
 @router.get("/{device_id}/stream-url", response_model=DeviceStreamOut)
@@ -64,55 +66,91 @@ async def websocket_stream(
     RTSP WebSocket live stream for a device.
     Backend captures RTSP video via OpenCV and streams JPEG binary frames over WebSocket to frontend.
     """
-    await websocket.accept()
+    try:
+        await websocket.accept()
+    except Exception as e:
+        logger.warning(f"WebSocket accept failed: {e}")
+        return
 
-    # Authenticate token if provided
-    if token:
-        try:
-            from app.services.auth_service import verify_token
-            payload = verify_token(token)
-            if not payload:
-                await websocket.close(code=1008, reason="Unauthorized")
+    camera = None
+    try:
+        # Authenticate token if provided
+        if token:
+            try:
+                from app.services.auth_service import verify_token
+                payload = verify_token(token)
+                if not payload:
+                    await websocket.close(code=1008, reason="Unauthorized")
+                    return
+            except Exception:
+                await websocket.close(code=1008, reason="Invalid token")
                 return
-        except Exception:
-            await websocket.close(code=1008, reason="Invalid token")
+
+        device = db.query(Device).filter(Device.id == device_id).first()
+        if not device:
+            await websocket.close(code=1008, reason="Device not found")
             return
 
-    device = db.query(Device).filter(Device.id == device_id).first()
-    if not device:
-        await websocket.close(code=1008, reason="Device not found")
-        return
-
-    rtsp_url = build_rtsp_url(device)
-    transport = device.transport or "tcp"
-
-    camera = OpenCVCamera(rtsp_url, transport=transport)
-    opened = await camera.open()
-    if not opened:
-        try:
-            await websocket.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream"}))
-        except Exception:
-            pass
-        await websocket.close(code=1011)
-        return
-
-    try:
-        while True:
-            jpeg_bytes = await camera.read_frame()
-            if jpeg_bytes is not None:
+        # Automatically close any existing camera websockets to disconnect unused RTSP camera streams
+        for dev_id, ws_list in list(active_camera_websockets.items()):
+            for old_ws in ws_list[:]:
                 try:
-                    await websocket.send_bytes(jpeg_bytes)
-                except (WebSocketDisconnect, RuntimeError, ConnectionResetError, asyncio.CancelledError):
-                    logger.info(f"WebSocket client disconnected for device {device_id}. Stopping camera stream.")
-                    break
-            await asyncio.sleep(1.0 / 15.0)  # ~15 FPS
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for device {device_id}.")
-    except Exception as e:
-        logger.warning(f"WebSocket streaming closed for device {device_id}: {e}")
+                    await old_ws.close(code=1000, reason="Device changed")
+                except Exception:
+                    pass
+            active_camera_websockets[dev_id] = []
+
+        if device_id not in active_camera_websockets:
+            active_camera_websockets[device_id] = []
+        active_camera_websockets[device_id].append(websocket)
+
+        rtsp_url = build_rtsp_url(device)
+        transport = device.transport or "tcp"
+
+        opened = False
+        for attempt in range(1, 4):
+            camera = OpenCVCamera(rtsp_url, transport=transport)
+            opened = await camera.open()
+            if opened:
+                break
+            logger.warning(f"WebSocket attempt {attempt}/3 to open camera stream for device {device_id} failed. Retrying...")
+            await asyncio.sleep(0.5)
+
+        if not opened or not camera:
+            try:
+                await websocket.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream"}))
+            except Exception:
+                pass
+            await websocket.close(code=1011)
+            if websocket in active_camera_websockets.get(device_id, []):
+                active_camera_websockets[device_id].remove(websocket)
+            return
+
+        try:
+            while True:
+                jpeg_bytes = await camera.read_frame()
+                if jpeg_bytes is not None:
+                    try:
+                        await websocket.send_bytes(jpeg_bytes)
+                    except (WebSocketDisconnect, RuntimeError, ConnectionResetError, asyncio.CancelledError):
+                        logger.info(f"WebSocket client disconnected for device {device_id}. Stopping camera stream.")
+                        break
+                await asyncio.sleep(1.0 / 25.0)  # ~25 FPS ultra-fast
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket disconnected for device {device_id}.")
+        except Exception as e:
+            logger.warning(f"WebSocket streaming closed for device {device_id}: {e}")
+    except Exception as outer_e:
+        logger.error(f"Unhandled websocket error for device {device_id}: {outer_e}")
     finally:
-        logger.info(f"Disconnecting backend RTSP camera resources for device {device_id}...")
-        await camera.release_async()
+        try:
+            logger.info(f"Disconnecting backend RTSP camera resources for device {device_id}...")
+            if websocket in active_camera_websockets.get(device_id, []):
+                active_camera_websockets[device_id].remove(websocket)
+            if camera:
+                await camera.release_async()
+        except Exception as cleanup_e:
+            logger.warning(f"Cleanup error in websocket stream: {cleanup_e}")
 
 
 
@@ -127,16 +165,20 @@ def mjpeg_stream(
     MJPEG live stream for a device.
     Returns multipart/x-mixed-replace JPEG frames.
     """
-    device = get_device_by_id(db, device_id)
-    check_device_access(device, current_user)
+    try:
+        device = get_device_by_id(db, device_id)
+        check_device_access(device, current_user)
 
-    rtsp_url = build_rtsp_url(device)
-    transport = device.transport or "tcp"
+        rtsp_url = build_rtsp_url(device)
+        transport = device.transport or "tcp"
 
-    return StreamingResponse(
-        generate_mjpeg_frames(rtsp_url, transport=transport),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-    )
+        return StreamingResponse(
+            generate_mjpeg_frames(rtsp_url, transport=transport),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+        )
+    except Exception as e:
+        logger.error(f"Error initializing MJPEG stream for device {device_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to initialize MJPEG camera stream")
 
 
 
@@ -198,20 +240,28 @@ def get_global_otp_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all incoming OTP requests for devices owned by the current user."""
+    """Get all incoming OTP requests for devices owned by or accessible to the current user."""
     from app.models.device import Device
     from app.models.message import ThreadMessage
 
     if current_user.role == "super_admin":
         devices = db.query(Device).all()
-    elif current_user.role == "bank_admin":
-        devices = db.query(Device).filter(Device.bank_id == current_user.bank_id).all()
+    elif current_user.bank_id:
+        devices = db.query(Device).filter(
+            (Device.bank_id == current_user.bank_id) |
+            (Device.assigned_user_id == current_user.id) |
+            (Device.owner_id == current_user.id)
+        ).all()
     else:
-        devices = db.query(Device).filter(Device.assigned_user_id == current_user.id).all()
+        devices = db.query(Device).filter(
+            (Device.assigned_user_id == current_user.id) |
+            (Device.owner_id == current_user.id)
+        ).all()
 
     device_ids = [d.id for d in devices]
     if not device_ids:
         return []
+
     import datetime
     from app.utils.timezone import get_ist_now
     now = get_ist_now()
@@ -221,19 +271,21 @@ def get_global_otp_requests(
     for d_id in device_ids:
         latest = (
             db.query(ThreadMessage)
-            .filter(ThreadMessage.device_id == d_id)
+            .filter(
+                ThreadMessage.device_id == d_id,
+                ThreadMessage.message_type == "otp_request",
+                ThreadMessage.created_at >= five_minutes_ago,
+            )
             .order_by(ThreadMessage.created_at.desc())
             .first()
         )
-        if latest and latest.message_type in ("otp_request", "otp_request_ack"):
-            if latest.created_at >= five_minutes_ago:
-                messages.append(latest)
+        if latest:
+            messages.append(latest)
 
     messages.sort(key=lambda m: m.created_at, reverse=True)
 
     result = []
     for msg in messages:
-        # Resolve device name
         dev = next((d for d in devices if d.id == msg.device_id), None)
         out = {
             "id": msg.id,
@@ -241,6 +293,7 @@ def get_global_otp_requests(
             "device_name": dev.name if dev else f"Device #{msg.device_id}",
             "content": msg.content,
             "payload": msg.payload,
+            "message_type": msg.message_type,
             "created_at": msg.created_at.isoformat(),
         }
         result.append(out)
@@ -378,9 +431,35 @@ def send_action(
     import random
     import datetime
 
-    mode = action_data.mode
+    mode = (action_data.mode or "no_threat").lower()
     device = get_device_by_id(db, device_id)
     check_device_access(device, current_user)
+
+    from app.models.message import ThreadMessage
+    from app.utils.timezone import get_ist_now
+    now = get_ist_now()
+    five_minutes_ago = now - datetime.timedelta(minutes=5)
+    # Require an active unacknowledged hardware OTP request from the device
+    pending_req = (
+        db.query(ThreadMessage)
+        .filter(
+            ThreadMessage.device_id == device_id,
+            ThreadMessage.message_type == "otp_request",
+            ThreadMessage.created_at >= five_minutes_ago,
+        )
+        .order_by(ThreadMessage.created_at.desc())
+        .first()
+    )
+
+    if not pending_req:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active pending hardware OTP request found for this device. OTP can only be sent once when a device request is pending."
+        )
+
+    # Mark the hardware request as acknowledged (consumed, one-time send)
+    pending_req.message_type = "otp_request_ack"
+    db.commit()
 
     if mode == "thread":
         # Generate OTP + send email
@@ -389,9 +468,7 @@ def send_action(
         return {
             "success": True,
             "mode": "thread",
-            "message": f"OTP generated and sent to {current_user.email}",
-            "otp_code": otp_result["code"],
-            "otp_expires_at": otp_result["expires_at"].isoformat(),
+            "message": f"Authorization OTP generated and dispatched to {current_user.email}.",
             "email_sent": otp_result.get("email_sent", False),
         }
 
@@ -403,7 +480,6 @@ def send_action(
         from app.models.otp import OTPCode
         from app.services.email_service import send_otp_email
         from app.services.mqtt_service import publish_otp_to_device
-        from app.models.message import ThreadMessage
 
         u1_id = action_data.user_id_1
         u2_id = action_data.user_id_2
@@ -458,8 +534,7 @@ def send_action(
             if u2.bank_id and u2.bank_id != current_user.bank_id:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User 2 must belong to your bank")
 
-        from app.utils.timezone import get_ist_now
-        expires_at = get_ist_now() + datetime.timedelta(minutes=5)
+        expires_at = now + datetime.timedelta(minutes=5)
 
         # 1st OTP: for User 1 if enabled
         if enable_otp1:
@@ -510,11 +585,9 @@ def send_action(
         new_msg = ThreadMessage(
             device_id=device.id,
             sender_id=current_user.id,
-            content=f"No Threat authorized. 1st OTP: {otp1} (sent to {u1.email}), 2nd OTP: {otp2} (sent to {u2.email}). Published to MQTT `/OTP/{device.name}`.",
+            content=f"No Threat authorized. 1st OTP sent to {u1.email}, 2nd OTP sent to {u2.email}. Published to MQTT `/OTP/{device.name}`.",
             message_type="no_threat",
             payload={
-                "otp1": otp1,
-                "otp2": otp2,
                 "recipient1": u1.username,
                 "recipient1_email": u1.email,
                 "recipient2": u2.username,
@@ -533,9 +606,7 @@ def send_action(
         return {
             "success": True,
             "mode": "no_threat",
-            "message": f"NO THREAT authorized. 1st OTP ({otp1}) sent to {u1.email}. 2nd OTP ({otp2}) sent to {u2.email}. Published to MQTT `/OTP/{device.name}`.",
-            "otp1": otp1,
-            "otp2": otp2,
+            "message": f"NO THREAT authorized for device {device.name}. OTPs dispatched to {u1.username} & {u2.username} via Email/WhatsApp & published to MQTT.",
             "user1_username": u1.username,
             "user1_email": u1.email,
             "user2_username": u2.username,

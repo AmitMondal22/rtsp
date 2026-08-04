@@ -93,71 +93,131 @@ function setStreamStatus(text, type) {
 let activeWebSocket = null;
 let currentBlobUrl = null;
 
-// ── WebSocket RTSP Streaming (Primary) ──
+let streamRetryTimer = null;
+let streamRetryCount = 0;
+
+function cancelStreamRetry() {
+    if (streamRetryTimer) {
+        clearTimeout(streamRetryTimer);
+        streamRetryTimer = null;
+    }
+}
+
+function handleStreamFailure(deviceId) {
+    cancelStreamRetry();
+    if (state.selectedDeviceId !== deviceId) return;
+
+    streamRetryCount++;
+    setStreamStatus(`Reconnecting stream (attempt ${streamRetryCount})...`, "warning");
+
+    streamRetryTimer = setTimeout(() => {
+        if (state.selectedDeviceId === deviceId) {
+            startWebSocketStream(deviceId);
+        }
+    }, 1500);
+}
+
+// ── WebSocket RTSP Streaming (Primary - GPU Accelerated) ──
 function startWebSocketStream(deviceId) {
     stopAllStreams();
     currentStreamMode = "websocket";
 
+    const canvas = qs("#camera-feed-canvas");
     const mjpegEl = qs("#camera-feed-mjpeg");
-    if (!mjpegEl) return;
 
-    mjpegEl.style.display = "block";
-    setStreamStatus("Connecting WebSocket...", "info");
+    if (canvas) {
+        canvas.style.display = "block";
+    }
+    if (mjpegEl) {
+        mjpegEl.style.display = "none";
+    }
+    if (streamRetryCount > 0) {
+        setStreamStatus(`Reconnecting RTSP stream (attempt ${streamRetryCount})...`, "warning");
+    } else {
+        setStreamStatus("Connecting Ultra-Fast RTSP...", "info");
+    }
 
+    const ctx = canvas ? canvas.getContext("2d", { alpha: false, desynchronized: true }) : null;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/api/camera/${deviceId}/ws${state.token ? `?token=${state.token}` : ""}`;
 
-    try {
-        activeWebSocket = new WebSocket(wsUrl);
-        activeWebSocket.binaryType = "blob";
+    // Brief delay to allow backend socket cleanup when rapidly switching devices
+    setTimeout(() => {
+        if (currentStreamMode !== "websocket" || state.selectedDeviceId !== deviceId) return;
+        try {
+            activeWebSocket = new WebSocket(wsUrl);
+            activeWebSocket.binaryType = "blob";
 
-        activeWebSocket.onopen = () => {
-            setStreamStatus("Live (WebSocket)", "live");
-            startCameraTimestamp();
-        };
-
-        activeWebSocket.onmessage = (event) => {
-            if (typeof event.data === "string") {
-                try {
-                    const parsed = JSON.parse(event.data);
-                    if (parsed.error) {
-                        setStreamStatus("WS Error: " + parsed.error, "error");
-                        startMjpegStream(deviceId);
-                    }
-                } catch (e) {}
-                return;
-            }
-
-            if (event.data instanceof Blob) {
-                const newUrl = URL.createObjectURL(event.data);
-                mjpegEl.src = newUrl;
-
-                if (currentBlobUrl) {
-                    URL.revokeObjectURL(currentBlobUrl);
-                }
-                currentBlobUrl = newUrl;
+            activeWebSocket.onopen = () => {
+                cancelStreamRetry();
                 setStreamStatus("Live (WebSocket)", "live");
-            }
-        };
+                startCameraTimestamp();
+            };
 
-        activeWebSocket.onerror = (err) => {
-            console.warn("WebSocket stream error, fallback to MJPEG:", err);
-            startMjpegStream(deviceId);
-        };
+            activeWebSocket.onmessage = async (event) => {
+                if (typeof event.data === "string") {
+                    try {
+                        const parsed = JSON.parse(event.data);
+                        if (parsed.error) {
+                            startMjpegStream(deviceId);
+                        }
+                    } catch (e) {}
+                    return;
+                }
 
-        activeWebSocket.onclose = () => {
-            if (currentStreamMode === "websocket") {
+                if (event.data instanceof Blob) {
+                    // Frame received! Reset retry count and cancel retry timer
+                    streamRetryCount = 0;
+                    cancelStreamRetry();
+
+                    if (canvas && ctx && window.createImageBitmap) {
+                        try {
+                            const bitmap = await createImageBitmap(event.data);
+                            if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                                canvas.width = bitmap.width;
+                                canvas.height = bitmap.height;
+                            }
+                            ctx.drawImage(bitmap, 0, 0);
+                            bitmap.close();
+                            setStreamStatus("Live (WebSocket)", "live");
+                            return;
+                        } catch (e) {}
+                    }
+
+                    // Fallback to Image Object URL
+                    if (mjpegEl) {
+                        mjpegEl.style.display = "block";
+                        if (canvas) canvas.style.display = "none";
+                        const newUrl = URL.createObjectURL(event.data);
+                        mjpegEl.src = newUrl;
+                        if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+                        currentBlobUrl = newUrl;
+                        setStreamStatus("Live (WebSocket)", "live");
+                    }
+                }
+            };
+
+            activeWebSocket.onerror = (err) => {
+                console.warn("WebSocket stream error, fallback to MJPEG:", err);
                 startMjpegStream(deviceId);
-            }
-        };
-    } catch (e) {
-        console.error("Failed to initialize WebSocket stream:", e);
-        startMjpegStream(deviceId);
-    }
+            };
+
+            activeWebSocket.onclose = () => {
+                if (currentStreamMode === "websocket" && state.selectedDeviceId === deviceId) {
+                    startMjpegStream(deviceId);
+                }
+            };
+        } catch (e) {
+            console.error("Failed to initialize WebSocket stream:", e);
+            startMjpegStream(deviceId);
+        }
+    }, 100);
 }
 
 function stopWebSocket() {
     if (activeWebSocket) {
+        activeWebSocket.onclose = null;
+        activeWebSocket.onerror = null;
         try {
             activeWebSocket.close();
         } catch (e) {}
@@ -167,6 +227,23 @@ function stopWebSocket() {
         URL.revokeObjectURL(currentBlobUrl);
         currentBlobUrl = null;
     }
+    const canvas = qs("#camera-feed-canvas");
+    if (canvas) {
+        canvas.style.display = "none";
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+function stopAllStreams() {
+    cancelStreamRetry();
+    stopWebSocket();
+    const mjpegEl = qs("#camera-feed-mjpeg");
+    if (mjpegEl) {
+        mjpegEl.removeAttribute("src");
+        mjpegEl.style.display = "none";
+    }
+    currentStreamMode = null;
 }
 
 // ── MJPEG Streaming (Fallback) ──
@@ -175,19 +252,31 @@ function startMjpegStream(deviceId) {
     currentStreamMode = "mjpeg";
 
     const mjpegEl = qs("#camera-feed-mjpeg");
+    const canvas = qs("#camera-feed-canvas");
+
+    if (canvas) canvas.style.display = "none";
 
     if (mjpegEl) {
         mjpegEl.style.display = "block";
-        setStreamStatus("Connecting MJPEG...", "info");
+        if (streamRetryCount > 0) {
+            setStreamStatus(`Reconnecting Stream (attempt ${streamRetryCount})...`, "warning");
+        } else {
+            setStreamStatus("Connecting Stream...", "info");
+        }
 
-        mjpegEl.src = `/api/camera/${deviceId}/mjpeg${state.token ? `?token=${state.token}` : ""}`;
+        const cacheBuster = `&t=${Date.now()}`;
+        mjpegEl.src = `/api/camera/${deviceId}/mjpeg${state.token ? `?token=${state.token}` : ""}${cacheBuster}`;
 
         mjpegEl.onload = () => {
-            setStreamStatus("Live (MJPEG)", "live");
+            streamRetryCount = 0;
+            cancelStreamRetry();
+            setStreamStatus("Live (Stream)", "live");
         };
 
         mjpegEl.onerror = () => {
-            setStreamStatus("Stream failed. Click refresh to retry.", "error");
+            if (state.selectedDeviceId === deviceId) {
+                handleStreamFailure(deviceId);
+            }
         };
     }
 }
@@ -234,22 +323,43 @@ function renderOtpRequests(requests) {
     countBadge.textContent = requests.length;
 
     if (requests.length === 0) {
-        list.innerHTML = `<div class="empty-state text-muted py-3 text-center"><p class="mb-0 small">No active requests.</p></div>`;
+        list.innerHTML = `<div class="text-brand-muted text-xs py-3 text-center"><p class="mb-0">No active OTP requests.</p></div>`;
         return;
     }
 
     list.innerHTML = requests.map(req => {
         const timeStr = formatTime(req.created_at);
-        const devId = req.payload?.device_id || req.device_name;
+        const devName = req.device_name || `Device #${req.device_id}`;
+        const otp1 = req.payload?.otp1 || req.payload?.otp1_code || req.payload?.otp_code || req.payload?.code;
+        const otp2 = req.payload?.otp2 || req.payload?.otp2_code;
+        const u1 = req.payload?.recipient1 || "1st User";
+        const u2 = req.payload?.recipient2 || "2nd User";
+        const status = req.payload?.status || (req.message_type === 'otp_request' ? 'Pending' : 'Processed');
+
         return `
-            <div class="device-item otp-req-item" onclick="selectDevice(${req.device_id})">
-                <div class="d-flex align-items-center justify-content-between">
-                    <span class="device-name text-warning font-weight-bold"><i class="bi bi-shield-exclamation mr-1"></i> OTP Request</span>
-                    <span class="text-muted small">${timeStr}</span>
+            <div class="bg-brand-darkBg border border-brand-border/70 hover:border-brand-blue rounded p-2.5 cursor-pointer transition space-y-1.5" onclick="window.selectDevice(${req.device_id})">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-amber-400 font-bold flex items-center">
+                        <i class="bi bi-shield-lock-fill mr-1 text-amber-400"></i> ${escapeHtml(devName)}
+                    </span>
+                    <span class="text-[10px] ${status === 'Pending' ? 'text-amber-400 bg-amber-400/10' : 'text-emerald-400 bg-emerald-400/10'} px-1.5 py-0.5 rounded font-mono font-semibold">${escapeHtml(status)}</span>
                 </div>
-                <div class="device-location">Device ID: ${escapeHtml(String(devId))}</div>
-                <div class="device-info">Time: ${escapeHtml(req.payload?.time || '')} | Relay: ${req.payload?.relay || 0}</div>
-                <div class="mt-1"><span class="badge badge-warning text-dark">Click to Confirm</span></div>
+                <div class="text-[10px] text-brand-muted font-mono flex items-center justify-between">
+                    <span>${escapeHtml(req.payload?.topic || 'RTSP Camera')}</span>
+                    <span>${timeStr}</span>
+                </div>
+                ${otp1 ? `
+                <div class="flex items-center justify-between bg-brand-sidebar/80 px-2 py-1 rounded text-xs border border-brand-border/40">
+                    <span class="text-[10px] text-brand-muted font-medium">1st OTP (${escapeHtml(u1)}):</span>
+                    <span class="font-mono font-bold text-emerald-400 text-xs tracking-wider">${escapeHtml(String(otp1))}</span>
+                </div>` : ''}
+                ${otp2 ? `
+                <div class="flex items-center justify-between bg-brand-sidebar/80 px-2 py-1 rounded text-xs border border-brand-border/40">
+                    <span class="text-[10px] text-brand-muted font-medium">2nd OTP (${escapeHtml(u2)}):</span>
+                    <span class="font-mono font-bold text-blue-400 text-xs tracking-wider">${escapeHtml(String(otp2))}</span>
+                </div>` : ''}
+                ${!otp1 && !otp2 ? `
+                <div class="text-[11px] text-slate-300 truncate">${escapeHtml(req.content || 'Incoming hardware request')}</div>` : ''}
             </div>
         `;
     }).join("");
@@ -263,52 +373,32 @@ function updateSendButtonState() {
 
     if (!state.selectedDeviceId) {
         btn.disabled = true;
+        const hint = qs(".mode-action-hint");
+        if (hint) {
+            hint.innerHTML = `<i class="bi bi-info-circle mr-1"></i> Select a camera device`;
+            hint.className = "mode-action-hint text-brand-muted text-[10px]";
+        }
         return;
     }
 
     const deviceRequests = (state.otpRequests || []).filter(
-        req => req.device_id === state.selectedDeviceId
+        req => req.device_id === state.selectedDeviceId && req.message_type === "otp_request"
     );
 
-    if (deviceRequests.length === 0) {
-        btn.disabled = true;
-        const hint = qs(".mode-action-hint");
-        if (hint) {
-            hint.innerHTML = `<i class="bi bi-info-circle mr-1"></i> Waiting for OTP Request`;
-            hint.className = "mode-action-hint text-brand-muted text-[10px]";
-            hint.removeAttribute("style");
-        }
-        return;
-    }
-
-    deviceRequests.sort((a, b) => new Date(b.created_at + (b.created_at.endsWith("Z") ? "" : "Z")) - new Date(a.created_at + (a.created_at.endsWith("Z") ? "" : "Z")));
-    const latestReq = deviceRequests[0];
-
-    const dateStr = latestReq.created_at.endsWith("Z") ? latestReq.created_at : latestReq.created_at + "Z";
-    const ageMs = Date.now() - new Date(dateStr).getTime();
-
-    const FIVE_MINUTES_MS = 5 * 60 * 1000; // 300,000 ms (5 minutes)
-
     const hint = qs(".mode-action-hint");
-    if (ageMs <= FIVE_MINUTES_MS && ageMs >= 0) {
+
+    // Enable Send button ONLY if an active unacknowledged hardware OTP request is pending
+    if (deviceRequests.length > 0) {
         btn.disabled = false;
         if (hint) {
-            const totalSecLeft = Math.max(0, Math.ceil((FIVE_MINUTES_MS - ageMs) / 1000));
-            const mins = Math.floor(totalSecLeft / 60);
-            const secs = totalSecLeft % 60;
-            const timeFormatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-            hint.innerHTML = `<i class="bi bi-clock-history mr-1 text-emerald-400"></i> Request Active: ${timeFormatted} remaining`;
-            hint.className = "mode-action-hint text-[10px]";
-            hint.style.color = "var(--success, #10b981)";
-            hint.style.fontWeight = "600";
+            hint.innerHTML = `<i class="bi bi-check-circle text-emerald-400 mr-1"></i> Active Device Request (Ready to Send)`;
+            hint.className = "mode-action-hint text-emerald-400 text-[10px]";
         }
     } else {
         btn.disabled = true;
         if (hint) {
-            hint.innerHTML = `<i class="bi bi-exclamation-circle mr-1 text-red-400"></i> OTP Request Expired (> 5m ago)`;
-            hint.className = "mode-action-hint text-[10px]";
-            hint.style.color = "var(--danger, #ef4444)";
-            hint.style.fontWeight = "600";
+            hint.innerHTML = `<i class="bi bi-exclamation-circle text-amber-400 mr-1"></i> Waiting for Device OTP Request`;
+            hint.className = "mode-action-hint text-amber-400 text-[10px]";
         }
     }
 }
@@ -511,8 +601,11 @@ function selectDevice(deviceId) {
 
     updateSendButtonState();
 }
+window.selectDevice = selectDevice;
 
 function showDeviceView(device) {
+    stopAllStreams();
+
     qs("#add-device-form").classList.add("hidden");
     qs("#empty-state").classList.add("hidden");
     qs("#device-view").classList.remove("hidden");
@@ -532,9 +625,6 @@ function showDeviceView(device) {
 
     // Start WebSocket RTSP streaming (with MJPEG fallback)
     startWebSocketStream(device.id);
-
-    // Fetch and render last request acknowledgment
-    loadLastAcknowledgment(device.id);
 
     // Hide action result when switching devices
     qs("#action-result").classList.add("hidden");
@@ -816,9 +906,7 @@ qs("#save-device-btn").addEventListener("click", async () => {
 
     try {
         if (editingDeviceId) {
-            // Don't send empty password on edit
-            if (!data.password) delete data.password;
-            if (!data.rtsp_url) delete data.rtsp_url;
+            if (!data.password && !data.rtsp_url) delete data.password;
 
             const device = await api(`/api/devices/${editingDeviceId}`, {
                 method: "PUT",
@@ -919,31 +1007,30 @@ qs("#send-action-btn").addEventListener("click", async () => {
         // Show action result
         showActionResult(result);
 
-        // Refresh Last Request & Ack card
-        await loadLastAcknowledgment(state.selectedDeviceId);
-
-        // Refresh OTP requests list in sidebar
-        await loadOtpRequests();
-
         // Show toast based on mode
         if (mode === "thread") {
             const emailStatus = result.email_sent ? "📧 Email sent!" : "⚠️ Email not configured";
             showToast(`Thread: OTP generated. ${emailStatus}`, result.email_sent ? "success" : "info");
         } else if (mode === "no_threat") {
-            showToast("NO THREAT: Dual OTP sent to selected users!", "success");
+            showToast(`NO THREAT: Dual OTP generated for ${result.user1_username || "User 1"} & ${result.user2_username || "User 2"}!`, "success");
         } else {
-            showToast("No Thread — message saved locally. No email.", "info");
+            showToast("No Thread — message saved locally.", "info");
         }
 
         // Update status indicator
         statusIndicator.innerHTML = '<i class="bi bi-check-circle-fill text-success mr-1" style="font-size:10px;"></i><span class="text-success small">Sent!</span>';
 
     } catch (err) {
-        showToast(err.message, "error");
+        showToast(err.message || "Failed to send action request", "error");
         statusIndicator.innerHTML = '<i class="bi bi-x-circle-fill text-danger mr-1" style="font-size:10px;"></i><span class="text-danger small">Failed</span>';
     } finally {
         btn.classList.remove("sending");
+        btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-send mr-1"></i> Send';
+        updateSendButtonState();
+
+        // Refresh OTP requests list in sidebar
+        loadOtpRequests();
 
         // Reset status after 5 seconds
         setTimeout(() => {
@@ -957,62 +1044,44 @@ function showActionResult(result) {
     const panel = qs("#action-result");
     const body = qs("#action-result-body");
     const title = qs("#action-result-title");
+    if (!panel || !body || !title) return;
 
     panel.classList.remove("hidden");
 
-    if (result.mode === "thread") {
-        title.innerHTML = '<i class="bi bi-lock mr-2 text-warning"></i> Thread — OTP Generated';
-        body.innerHTML = `
-            <div class="text-center mb-3">
-                <div class="otp-display-inline">${escapeHtml(result.otp_code || "------")}</div>
-            </div>
-            <div class="result-item">
-                <div class="result-icon ${result.email_sent ? 'success' : 'warning'}">
-                    <i class="bi ${result.email_sent ? 'bi-envelope-open' : 'bi-envelope'}"></i>
-                </div>
-                <div>
-                    <strong>Email</strong><br>
-                    <span class="text-muted small">${result.email_sent ? 'OTP sent to your email' : 'SMTP not configured — email not sent'}</span>
-                </div>
-            </div>
-            ${result.otp_expires_at ? `
-            <div class="result-item">
-                <div class="result-icon info">
-                    <i class="bi bi-clock"></i>
-                </div>
-                <div>
-                    <strong>Expires</strong><br>
-                    <span class="text-muted small" id="otp-countdown">${formatExpiry(result.otp_expires_at)}</span>
-                </div>
-            </div>` : ''}
-        `;
+    const m = (result.mode || "").toLowerCase();
 
-        // Start countdown if expiry provided
-        if (result.otp_expires_at) {
-            startOtpCountdown(result.otp_expires_at);
-        }
-    } else if (result.mode === "no_threat") {
-        console.log(">>>>>>>>>>>>>>>>>>>")
-    } else {
-        title.innerHTML = '<i class="bi bi-database mr-2 text-info"></i> No Thread — Local Message';
+    if (m === "thread") {
+        title.innerHTML = '<i class="bi bi-lock mr-2 text-warning"></i> Thread — Authorized';
         body.innerHTML = `
-            <div class="result-item">
-                <div class="result-icon info">
-                    <i class="bi bi-database"></i>
-                </div>
-                <div>
-                    <strong>Message Saved Locally</strong><br>
-                    <span class="text-muted small">No Thread — stored in database only</span>
+            <div class="space-y-2">
+                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
+                    <div class="text-[11px] text-slate-200 font-medium">${escapeHtml(result.message || 'Authorization OTP Sent')}</div>
+                    <div class="text-[10px] text-brand-muted mt-1">Email Delivery: ${result.email_sent ? "📧 Sent" : "Disabled/Skipped"}</div>
                 </div>
             </div>
-            <div class="result-item">
-                <div class="result-icon warning">
-                    <i class="bi bi-envelope-open"></i>
+        `;
+    } else if (m === "no_threat") {
+        title.innerHTML = '<i class="bi bi-shield-check mr-2 text-emerald-400"></i> NO THREAT — Dispatched';
+        body.innerHTML = `
+            <div class="space-y-2">
+                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
+                    <div class="text-[10px] text-brand-muted uppercase font-bold mb-1">1st User (${escapeHtml(result.user1_username || "User 1")})</div>
+                    <div class="text-[10px] text-brand-muted truncate">Email: ${escapeHtml(result.user1_email || "N/A")} (${result.email_sent1 ? "📧 Sent" : "No email"})</div>
                 </div>
-                <div>
-                    <strong>Email</strong><br>
-                    <span class="text-muted small">Not sent (No Thread mode)</span>
+                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
+                    <div class="text-[10px] text-brand-muted uppercase font-bold mb-1">2nd User (${escapeHtml(result.user2_username || "User 2")})</div>
+                    <div class="text-[10px] text-brand-muted truncate">Email: ${escapeHtml(result.user2_email || "N/A")} (${result.email_sent2 ? "📧 Sent" : "No email"})</div>
                 </div>
+                <div class="text-[10px] text-emerald-400 font-mono text-center pt-1">
+                    <i class="bi bi-broadcast mr-1"></i> Published to MQTT: ${result.mqtt_sent ? "Success" : "Offline"}
+                </div>
+            </div>
+        `;
+    } else {
+        title.innerHTML = '<i class="bi bi-database mr-2 text-info"></i> No Thread — Saved';
+        body.innerHTML = `
+            <div class="bg-brand-sidebar border border-brand-border rounded p-2.5 text-xs text-slate-300">
+                Message saved locally.
             </div>
         `;
     }
