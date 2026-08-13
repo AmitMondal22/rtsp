@@ -79,12 +79,15 @@ async function initUser() {
         qs("#user-dropdown-username").textContent = state.user.username;
         qs("#user-dropdown-role").textContent = state.user.role.toUpperCase();
 
+        if (state.user.role !== "super_admin" && state.user.role !== "admin") {
+            window.location.href = "/dashboard";
+            return;
+        }
+
         const navUsers = qs("#nav-users-link");
         const navBranches = qs("#nav-branches-link");
-        if (state.user.role === "super_admin" || state.user.role === "admin" || state.user.role === "bank_admin") {
-            if (navUsers) navUsers.classList.remove("hidden");
-            if (navBranches) navBranches.classList.remove("hidden");
-        }
+        if (navUsers) navUsers.classList.remove("hidden");
+        if (navBranches) navBranches.classList.remove("hidden");
 
         await loadUsersForDropdowns();
         await loadBanks();
@@ -170,25 +173,32 @@ async function loadBanks() {
 
         if (!tbody) return;
         if (banks.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-brand-muted">No registered banks found.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-brand-muted">No registered banks found.</td></tr>`;
             return;
         }
 
-        tbody.innerHTML = banks.map(b => `
-            <tr class="hover:bg-brand-border/20 transition">
-                <td class="py-3 pr-4 font-semibold text-brand-blue">${b.id}</td>
-                <td class="py-3 pr-4 font-medium text-white">${escapeHtml(b.name)}</td>
-                <td class="py-3 pr-4 text-slate-400 font-mono text-xs">${new Date(b.created_at).toLocaleString()}</td>
-                <td class="py-3 text-right space-x-2">
-                    <button class="px-2.5 py-1 bg-brand-blue/20 hover:bg-brand-blue/30 text-brand-blue rounded text-xs transition" onclick="openEditBankModal(${b.id}, '${escapeHtml(b.name).replace(/'/g, "\\'")}')">
-                        <i class="bi bi-pencil-fill mr-1"></i> Edit
-                    </button>
-                    <button class="px-2.5 py-1 bg-brand-danger/20 hover:bg-brand-danger/30 text-brand-danger rounded text-xs transition" onclick="deleteBank(${b.id}, '${escapeHtml(b.name).replace(/'/g, "\\'")}')">
-                        <i class="bi bi-trash-fill mr-1"></i> Delete
-                    </button>
-                </td>
-            </tr>
-        `).join("");
+        tbody.innerHTML = banks.map(b => {
+            const adminDisplay = b.admin_username
+                ? `<span class="block font-semibold text-white">${escapeHtml(b.admin_username)}</span><span class="block text-brand-muted text-xs">${escapeHtml(b.admin_email || '')}</span>`
+                : `<span class="text-brand-muted text-xs">—</span>`;
+
+            return `
+                <tr class="hover:bg-brand-border/20 transition">
+                    <td class="py-3 pr-4 font-semibold text-brand-blue">${b.id}</td>
+                    <td class="py-3 pr-4 font-medium text-white">${escapeHtml(b.name)}</td>
+                    <td class="py-3 pr-4 text-xs">${adminDisplay}</td>
+                    <td class="py-3 pr-4 text-slate-400 font-mono text-xs">${new Date(b.created_at).toLocaleString()}</td>
+                    <td class="py-3 text-right space-x-2">
+                        <button class="px-2.5 py-1 bg-brand-blue/20 hover:bg-brand-blue/30 text-brand-blue rounded text-xs transition" onclick="openEditBankModal(${b.id})">
+                            <i class="bi bi-pencil-fill mr-1"></i> Edit
+                        </button>
+                        <button class="px-2.5 py-1 bg-brand-danger/20 hover:bg-brand-danger/30 text-brand-danger rounded text-xs transition" onclick="deleteBank(${b.id}, '${escapeHtml(b.name).replace(/'/g, "\\'")}')">
+                            <i class="bi bi-trash-fill mr-1"></i> Delete
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join("");
     } catch (err) {
         console.error("Failed to load banks:", err);
         showToast(err.message, "error");
@@ -313,9 +323,16 @@ qs("#add-bank-form")?.addEventListener("submit", async (e) => {
     }
 });
 
-window.openEditBankModal = function(id, name) {
-    qs("#edit-bank-id").value = id;
-    qs("#edit-bank-name").value = name;
+window.openEditBankModal = function(id) {
+    const bank = (state.banks || []).find(b => b.id === id);
+    if (!bank) return;
+
+    qs("#edit-bank-id").value = bank.id;
+    qs("#edit-bank-name").value = bank.name;
+    if (qs("#edit-bank-admin-username")) qs("#edit-bank-admin-username").value = bank.admin_username || "";
+    if (qs("#edit-bank-admin-email")) qs("#edit-bank-admin-email").value = bank.admin_email || "";
+    if (qs("#edit-bank-admin-password")) qs("#edit-bank-admin-password").value = "";
+
     qs("#edit-bank-error").textContent = "";
     editBankModal.classList.remove("hidden");
 };
@@ -343,16 +360,25 @@ qs("#edit-bank-form")?.addEventListener("submit", async (e) => {
 
     const bankId = qs("#edit-bank-id").value;
     const bankName = qs("#edit-bank-name").value.trim();
+    const username = qs("#edit-bank-admin-username") ? qs("#edit-bank-admin-username").value.trim() : "";
+    const email = qs("#edit-bank-admin-email") ? qs("#edit-bank-admin-email").value.trim() : "";
+    const password = qs("#edit-bank-admin-password") ? qs("#edit-bank-admin-password").value.trim() : "";
+
     const errEl = qs("#edit-bank-error");
     if (errEl) errEl.textContent = "";
+
+    const payload = { name: bankName };
+    if (username) payload.username = username;
+    if (email) payload.email = email;
+    if (password) payload.password = password;
 
     try {
         await api(`/api/banks/${bankId}`, {
             method: "PUT",
-            body: JSON.stringify({ name: bankName })
+            body: JSON.stringify(payload)
         });
         editBankModal.classList.add("hidden");
-        showToast("Bank updated successfully!");
+        showToast("Bank & Admin updated successfully!");
         await loadBanks();
     } catch (err) {
         if (errEl) errEl.textContent = err.message;

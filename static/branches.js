@@ -25,6 +25,113 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
+// Debounce Helper
+function debounce(fn, delay = 350) {
+    let timer;
+    return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
+// Setup reactive email validation & alerts for 3 branch user fields
+function setupBranchEmailValidation(prefix) {
+    const inputs = [
+        qs(`#${prefix}-user1-email`),
+        qs(`#${prefix}-user2-email`),
+        qs(`#${prefix}-user3-email`)
+    ];
+
+    const feedbackEls = [
+        qs(`#${prefix}-user1-email-feedback`),
+        qs(`#${prefix}-user2-email-feedback`),
+        qs(`#${prefix}-user3-email-feedback`)
+    ];
+
+    if (!inputs[0] && !inputs[1] && !inputs[2]) return;
+
+    const validateAll = async () => {
+        const values = inputs.map(inp => inp ? inp.value.trim().toLowerCase() : "");
+
+        for (let i = 0; i < inputs.length; i++) {
+            const inputEl = inputs[i];
+            const feedbackEl = feedbackEls[i];
+            const val = values[i];
+
+            if (!inputEl || !feedbackEl) continue;
+
+            if (!val) {
+                feedbackEl.innerHTML = "";
+                inputEl.classList.remove("border-brand-danger", "border-emerald-500");
+                delete inputEl.dataset.isAvailable;
+                continue;
+            }
+
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+                feedbackEl.innerHTML = `<div class="mt-1 px-2.5 py-1.5 bg-brand-danger/20 border border-brand-danger/60 rounded-md text-brand-danger font-bold text-[11px] flex items-center shadow-md"><i class="bi bi-exclamation-triangle-fill mr-1.5 text-xs"></i> ALERT: Invalid email format</div>`;
+                inputEl.classList.add("border-brand-danger");
+                inputEl.classList.remove("border-emerald-500");
+                inputEl.dataset.isAvailable = "false";
+                continue;
+            }
+
+            // 1. Inter-field duplicate check within same branch modal
+            const otherIndices = [0, 1, 2].filter(idx => idx !== i);
+            const duplicateWithOther = otherIndices.some(idx => values[idx] && values[idx] === val);
+
+            if (duplicateWithOther) {
+                feedbackEl.innerHTML = `<div class="mt-1 px-2.5 py-1.5 bg-brand-danger/20 border border-brand-danger/60 rounded-md text-brand-danger font-bold text-[11px] flex items-center shadow-md"><i class="bi bi-exclamation-triangle-fill mr-1.5 text-xs"></i> ALERT: Duplicate email! Matches another user in this branch.</div>`;
+                inputEl.classList.add("border-brand-danger");
+                inputEl.classList.remove("border-emerald-500");
+                inputEl.dataset.isAvailable = "false";
+                continue;
+            }
+
+            // 2. Database duplicate check via API
+            feedbackEl.innerHTML = `<div class="mt-1 px-2.5 py-1 bg-brand-border/30 border border-brand-border rounded text-brand-muted font-normal text-[11px] flex items-center"><i class="bi bi-arrow-repeat mr-1.5 animate-spin text-xs"></i> Checking database...</div>`;
+
+            try {
+                let excludeUserIds = [];
+                if (prefix.startsWith("edit") && state.editingBranch) {
+                    const b = state.editingBranch;
+                    excludeUserIds = [b.user1_id, b.user2_id, b.user3_id].filter(Boolean);
+                }
+                const excludeId = excludeUserIds[i] || "";
+                const query = `/api/banks/check-email?email=${encodeURIComponent(val)}${excludeId ? `&exclude_user_id=${excludeId}` : ""}`;
+                const res = await api(query);
+
+                if (inputEl.value.trim().toLowerCase() !== val) continue;
+
+                if (res.available) {
+                    feedbackEl.innerHTML = `<div class="mt-1 px-2.5 py-1.5 bg-emerald-500/20 border border-emerald-500/60 rounded-md text-emerald-400 font-bold text-[11px] flex items-center shadow-md"><i class="bi bi-check-circle-fill mr-1.5 text-xs"></i> Email is available</div>`;
+                    inputEl.classList.remove("border-brand-danger");
+                    inputEl.classList.add("border-emerald-500");
+                    inputEl.dataset.isAvailable = "true";
+                } else {
+                    feedbackEl.innerHTML = `<div class="mt-1 px-2.5 py-1.5 bg-brand-danger/20 border border-brand-danger/60 rounded-md text-brand-danger font-bold text-[11px] flex items-center shadow-md"><i class="bi bi-x-circle-fill mr-1.5 text-xs"></i> ALERT: Email already registered in database!</div>`;
+                    inputEl.classList.add("border-brand-danger");
+                    inputEl.classList.remove("border-emerald-500");
+                    inputEl.dataset.isAvailable = "false";
+                }
+            } catch (err) {
+                console.error("Email check failed:", err);
+                feedbackEl.innerHTML = "";
+                delete inputEl.dataset.isAvailable;
+            }
+        }
+    };
+
+    const debouncedValidate = debounce(validateAll, 300);
+
+    inputs.forEach(inp => {
+        if (inp) {
+            inp.addEventListener("keyup", debouncedValidate);
+            inp.addEventListener("input", debouncedValidate);
+            inp.addEventListener("blur", validateAll);
+        }
+    });
+}
+
 async function api(path, options = {}) {
     const headers = { "Content-Type": "application/json" };
     if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
@@ -87,9 +194,17 @@ async function initUser() {
         // Always show branch menu item
         if (navBranches) navBranches.classList.remove("hidden");
 
-        if (state.user.role === "super_admin" || state.user.role === "admin" || state.user.role === "bank_admin") {
+        if (state.user.role === "super_admin" || state.user.role === "admin") {
             if (navBanks) navBanks.classList.remove("hidden");
             if (navUsers) navUsers.classList.remove("hidden");
+        } else if (state.user.role === "bank_admin") {
+            if (navBanks) navBanks.classList.add("hidden");
+            if (navUsers) navUsers.classList.remove("hidden");
+        } else {
+            if (navBanks) navBanks.classList.add("hidden");
+            if (navUsers) navUsers.classList.add("hidden");
+            const addBranchBtn = qs("#open-add-branch-modal");
+            if (addBranchBtn) addBranchBtn.classList.add("hidden");
         }
 
         await loadUsersForDropdowns();
@@ -362,6 +477,18 @@ qs("#add-branch-form")?.addEventListener("submit", async (e) => {
     const errEl = qs("#add-branch-error");
     if (errEl) errEl.textContent = "";
 
+    // Check duplicate emails across the 3 users
+    const formEmails = [u1Email, u2Email, u3Email].filter(Boolean).map(e => e.toLowerCase());
+    if (new Set(formEmails).size !== formEmails.length) {
+        if (errEl) errEl.textContent = "User 1, User 2, and User 3 cannot have the same email address.";
+        return;
+    }
+
+    if ([qs("#branch-user1-email"), qs("#branch-user2-email"), qs("#branch-user3-email")].some(el => el && el.dataset.isAvailable === "false")) {
+        if (errEl) errEl.textContent = "Please fix duplicate email addresses before saving.";
+        return;
+    }
+
     const payload = {
         bank_id: bankId,
         name,
@@ -410,6 +537,18 @@ qs("#add-branch-form")?.addEventListener("submit", async (e) => {
 window.openEditBranchModal = function(id) {
     const branch = (state.branches || []).find(b => b.id === id);
     if (!branch) return;
+
+    state.editingBranch = branch;
+    ["edit-branch-user1-email-feedback", "edit-branch-user2-email-feedback", "edit-branch-user3-email-feedback"].forEach(fid => {
+        const el = qs(`#${fid}`);
+        if (el) el.innerHTML = "";
+    });
+    [qs("#edit-branch-user1-email"), qs("#edit-branch-user2-email"), qs("#edit-branch-user3-email")].forEach(el => {
+        if (el) {
+            el.classList.remove("border-brand-danger", "border-emerald-500");
+            delete el.dataset.isAvailable;
+        }
+    });
 
     qs("#edit-branch-id").value = branch.id;
     qs("#edit-branch-bank-id").value = branch.bank_id;
@@ -510,6 +649,17 @@ qs("#edit-branch-form")?.addEventListener("submit", async (e) => {
     const errEl = qs("#edit-branch-error");
     if (errEl) errEl.textContent = "";
 
+    const formEmails = [u1Email, u2Email, u3Email].filter(Boolean).map(e => e.toLowerCase());
+    if (new Set(formEmails).size !== formEmails.length) {
+        if (errEl) errEl.textContent = "User 1, User 2, and User 3 cannot have the same email address.";
+        return;
+    }
+
+    if ([qs("#edit-branch-user1-email"), qs("#edit-branch-user2-email"), qs("#edit-branch-user3-email")].some(el => el && el.dataset.isAvailable === "false")) {
+        if (errEl) errEl.textContent = "Please fix duplicate email addresses before saving.";
+        return;
+    }
+
     const payload = {
         bank_id: bankId,
         name,
@@ -569,4 +719,8 @@ window.deleteBranch = async function(id, name) {
     }
 };
 
-document.addEventListener("DOMContentLoaded", initUser);
+document.addEventListener("DOMContentLoaded", () => {
+    initUser();
+    setupBranchEmailValidation("branch");
+    setupBranchEmailValidation("edit-branch");
+});

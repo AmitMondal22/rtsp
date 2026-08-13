@@ -19,6 +19,8 @@ from app.services.bank_service import (
     get_branches_service,
     update_branch_service,
     delete_branch_service,
+    check_email_availability_service,
+    format_bank_out,
 )
 
 router = APIRouter(prefix="/api/banks", tags=["Banks"])
@@ -31,14 +33,21 @@ def create_bank(
 ):
     if current_user.role not in ["super_admin", "admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can create banks")
-    return create_bank_and_admin_service(db, data)
+    bank = create_bank_and_admin_service(db, data)
+    return format_bank_out(db, bank)
 
 @router.get("/", response_model=list[BankOut])
 def list_banks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.query(Bank).all()
+    if current_user.role in ["super_admin", "admin"]:
+        banks = db.query(Bank).all()
+    elif current_user.bank_id:
+        banks = db.query(Bank).filter(Bank.id == current_user.bank_id).all()
+    else:
+        banks = []
+    return [format_bank_out(db, b) for b in banks]
 
 @router.put("/{bank_id}", response_model=BankOut)
 def update_bank(
@@ -59,7 +68,7 @@ def delete_bank(
 ):
     if current_user.role not in ["super_admin", "admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can delete banks")
-    return delete_bank_service(db, bank_id)
+    return delete_bank_service(db, bank_id, current_user=current_user)
 
 # ── Branch Endpoints ──
 @router.post("/branches", response_model=BranchOut)
@@ -70,6 +79,8 @@ def create_branch(
 ):
     if current_user.role not in ["super_admin", "admin", "bank_admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can create branches")
+    if current_user.role == "bank_admin":
+        data.bank_id = current_user.bank_id
     return create_branch_service(db, data)
 
 @router.get("/branches", response_model=list[BranchOut])
@@ -86,6 +97,8 @@ def list_bank_branches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.role == "bank_admin" and current_user.bank_id != bank_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access branches of other banks")
     return get_branches_service(db, current_user, bank_id=bank_id)
 
 @router.put("/branches/{branch_id}", response_model=BranchOut)
@@ -97,6 +110,8 @@ def update_branch(
 ):
     if current_user.role not in ["super_admin", "admin", "bank_admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can update branches")
+    if current_user.role == "bank_admin":
+        data.bank_id = current_user.bank_id
     return update_branch_service(db, branch_id, data)
 
 @router.delete("/branches/{branch_id}")
@@ -107,7 +122,7 @@ def delete_branch(
 ):
     if current_user.role not in ["super_admin", "admin", "bank_admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can delete branches")
-    return delete_branch_service(db, branch_id)
+    return delete_branch_service(db, branch_id, current_user=current_user)
 
 # ── User Endpoints ──
 @router.post("/users", response_model=UserOut)
@@ -118,6 +133,10 @@ def create_bank_user(
 ):
     if current_user.role not in ["super_admin", "admin", "bank_admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can create users")
+    if current_user.role == "bank_admin":
+        data.bank_id = current_user.bank_id
+        if data.role in ["super_admin", "admin"]:
+            data.role = "user"
     return create_bank_user_service(db, data, current_user)
 
 @router.get("/users", response_model=list[UserOut])
@@ -125,6 +144,8 @@ def list_bank_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.role not in ["super_admin", "admin", "bank_admin"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can view users")
     return get_bank_users_service(db, current_user)
 
 @router.put("/users/{user_id}", response_model=UserOut)
@@ -136,7 +157,11 @@ def update_bank_user(
 ):
     if current_user.role not in ["super_admin", "admin", "bank_admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can update users")
-    return update_bank_user_service(db, user_id, data)
+    if current_user.role == "bank_admin":
+        data.bank_id = current_user.bank_id
+        if data.role in ["super_admin", "admin"]:
+            data.role = "user"
+    return update_bank_user_service(db, user_id, data, current_user=current_user)
 
 @router.delete("/users/{user_id}")
 def delete_bank_user(
@@ -146,5 +171,18 @@ def delete_bank_user(
 ):
     if current_user.role not in ["super_admin", "admin", "bank_admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can delete users")
-    return delete_bank_user_service(db, user_id)
+    return delete_bank_user_service(db, user_id, current_user=current_user)
+
+
+from typing import Optional
+
+@router.get("/check-email")
+def check_email_availability(
+    email: str,
+    exclude_user_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return check_email_availability_service(db, email, exclude_user_id=exclude_user_id)
+
 

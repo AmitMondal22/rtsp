@@ -51,14 +51,12 @@
                 <p class="text-brand-muted text-xs mt-1">IP Camera Manager Surveillance System</p>
             </div>
 
-            <!-- Tabs -->
-            <div class="flex border-b border-brand-border mb-6">
-                <button class="flex-1 pb-2.5 text-center text-sm font-semibold border-b-2 border-brand-blue text-white" id="tab-login-btn">
-                    <i class="bi bi-box-arrow-in-right mr-1.5"></i> Sign In
-                </button>
-                <button class="flex-1 pb-2.5 text-center text-sm font-semibold border-b-2 border-transparent text-brand-muted hover:text-white" id="tab-register-btn">
-                    <i class="bi bi-person-plus mr-1.5"></i> Register
-                </button>
+            <!-- Sign In Header -->
+            <div class="border-b border-brand-border pb-3 mb-6 flex items-center justify-between">
+                <h4 class="text-sm font-bold text-white uppercase tracking-wider flex items-center">
+                    <i class="bi bi-box-arrow-in-right text-brand-blue mr-2 text-base"></i> Sign In to Account
+                </h4>
+                <span class="text-[10px] bg-brand-blue/20 text-brand-blue font-semibold px-2 py-0.5 rounded">Authorized Access Only</span>
             </div>
 
             <!-- Forms Container -->
@@ -66,12 +64,12 @@
                 <!-- Login Form -->
                 <form id="login-form" class="space-y-4">
                     <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Email Address *</label>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Email or Username *</label>
                         <div class="relative">
                             <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-brand-muted">
                                 <i class="bi bi-envelope"></i>
                             </span>
-                            <input id="login-username" type="text" class="w-full pl-10 pr-4 py-2 bg-brand-darkBg border border-brand-border rounded text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue" placeholder="Enter your email address" required />
+                            <input id="login-username" type="text" class="w-full pl-10 pr-4 py-2.5 bg-brand-darkBg border border-brand-border rounded text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue" placeholder="Enter your email or username" required />
                         </div>
                     </div>
                     <div>
@@ -80,48 +78,13 @@
                             <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-brand-muted">
                                 <i class="bi bi-lock"></i>
                             </span>
-                            <input id="login-password" type="password" class="w-full pl-10 pr-4 py-2 bg-brand-darkBg border border-brand-border rounded text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue" placeholder="Enter password" required />
+                            <input id="login-password" type="password" class="w-full pl-10 pr-4 py-2.5 bg-brand-darkBg border border-brand-border rounded text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue" placeholder="Enter password" required />
                         </div>
                     </div>
-                    <button type="submit" class="w-full py-2.5 bg-brand-blue hover:bg-brand-blue/90 active:scale-[0.98] transition text-white font-bold rounded text-sm mt-6 flex items-center justify-center">
+                    <button type="submit" class="w-full py-2.5 bg-brand-blue hover:bg-brand-blue/90 active:scale-[0.98] transition text-white font-bold rounded text-sm mt-6 flex items-center justify-center shadow-lg">
                         <i class="bi bi-shield-lock mr-2"></i> Sign In
                     </button>
                     <p id="login-error" class="text-brand-danger text-xs text-center mt-3"></p>
-                </form>
-
-                <!-- Register Form -->
-                <form id="register-form" class="space-y-4 hidden">
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Full Name / Display Name *</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-brand-muted">
-                                <i class="bi bi-person"></i>
-                            </span>
-                            <input id="reg-username" type="text" class="w-full pl-10 pr-4 py-2 bg-brand-darkBg border border-brand-border rounded text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue" placeholder="e.g. Amit Mondal" required />
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Email Address *</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-brand-muted">
-                                <i class="bi bi-envelope"></i>
-                            </span>
-                            <input id="reg-email" type="email" class="w-full pl-10 pr-4 py-2 bg-brand-darkBg border border-brand-border rounded text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue" placeholder="e.g. amit@example.com" required />
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Password *</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-brand-muted">
-                                <i class="bi bi-lock"></i>
-                            </span>
-                            <input id="reg-password" type="password" class="w-full pl-10 pr-4 py-2 bg-brand-darkBg border border-brand-border rounded text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue" placeholder="Min 6 characters" required />
-                        </div>
-                    </div>
-                    <button type="submit" class="w-full py-2.5 bg-brand-blue hover:bg-brand-blue/90 active:scale-[0.98] transition text-white font-bold rounded text-sm mt-6 flex items-center justify-center">
-                        <i class="bi bi-person-plus mr-2"></i> Register
-                    </button>
-                    <p id="register-error" class="text-brand-danger text-xs text-center mt-3"></p>
                 </form>
             </div>
         </div>

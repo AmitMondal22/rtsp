@@ -61,7 +61,14 @@ def get_current_user(
             user_id = int(sub)
             user = db.query(User).filter(User.id == user_id).first()
             if user:
+                if user.role not in ["super_admin", "admin", "bank_admin"]:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied. Regular user accounts are not permitted to access this application.",
+                    )
                 return user
+    except HTTPException:
+        raise
     except Exception:
         pass
 
@@ -119,5 +126,10 @@ def login_service(db: Session, identifier: str, password: str) -> str:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User account is inactive",
+        )
+    if db_user.role not in ["super_admin", "admin", "bank_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Regular user accounts are not permitted to log in.",
         )
     return create_access_token(data={"sub": db_user.id})

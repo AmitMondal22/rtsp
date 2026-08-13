@@ -122,11 +122,26 @@ def get_user_devices(db: Session, user: User) -> list[dict]:
     if user.role in ["super_admin", "admin"]:
         devices = db.query(Device).options(*opts).all()
     elif user.role == "bank_admin":
-        devices = db.query(Device).options(*opts).filter(Device.bank_id == user.bank_id).all()
-    else:
-        devices = db.query(Device).options(*opts).filter(
-            (Device.assigned_user_id == user.id) | (Device.bank_id == user.bank_id)
-        ).all()
+        if user.bank_id:
+            devices = db.query(Device).options(*opts).filter(Device.bank_id == user.bank_id).all()
+        else:
+            devices = []
+    else:  # regular user
+        if user.branch_id:
+            devices = db.query(Device).options(*opts).filter(
+                (Device.branch_id == user.branch_id) |
+                (Device.assigned_user_id == user.id) |
+                (Device.assigned_user_2_id == user.id) |
+                (Device.owner_id == user.id)
+            ).filter(Device.bank_id == user.bank_id if user.bank_id else True).all()
+        elif user.bank_id:
+            devices = db.query(Device).options(*opts).filter(Device.bank_id == user.bank_id).all()
+        else:
+            devices = db.query(Device).options(*opts).filter(
+                (Device.assigned_user_id == user.id) |
+                (Device.assigned_user_2_id == user.id) |
+                (Device.owner_id == user.id)
+            ).all()
     return [format_device_out(d) for d in devices]
 
 

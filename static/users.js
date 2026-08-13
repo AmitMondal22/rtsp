@@ -24,6 +24,70 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
+// Debounce Helper
+function debounce(fn, delay = 350) {
+    let timer;
+    return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
+// KeyUp Email Availability Checker
+function attachEmailAvailabilityCheck(inputId, feedbackId, getExcludeUserId = () => null) {
+    const inputEl = typeof inputId === "string" ? qs(`#${inputId}`) : inputId;
+    const feedbackEl = typeof feedbackId === "string" ? qs(`#${feedbackId}`) : feedbackId;
+    if (!inputEl || !feedbackEl) return;
+
+    const checkEmail = async () => {
+        const email = inputEl.value.trim();
+        if (!email) {
+            feedbackEl.innerHTML = "";
+            inputEl.classList.remove("border-brand-danger", "border-emerald-500");
+            delete inputEl.dataset.isAvailable;
+            return;
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            feedbackEl.innerHTML = `<span class="text-brand-danger font-medium flex items-center"><i class="bi bi-exclamation-triangle-fill mr-1"></i> Invalid email format</span>`;
+            inputEl.classList.add("border-brand-danger");
+            inputEl.classList.remove("border-emerald-500");
+            inputEl.dataset.isAvailable = "false";
+            return;
+        }
+
+        feedbackEl.innerHTML = `<span class="text-brand-muted flex items-center"><i class="bi bi-arrow-repeat mr-1 animate-spin"></i> Checking availability...</span>`;
+
+        try {
+            const excludeId = getExcludeUserId() || "";
+            const query = `/api/banks/check-email?email=${encodeURIComponent(email)}${excludeId ? `&exclude_user_id=${excludeId}` : ""}`;
+            const res = await api(query);
+
+            if (res.available) {
+                feedbackEl.innerHTML = `<span class="text-emerald-400 font-medium flex items-center"><i class="bi bi-check-circle-fill mr-1"></i> Email available</span>`;
+                inputEl.classList.remove("border-brand-danger");
+                inputEl.classList.add("border-emerald-500");
+                inputEl.dataset.isAvailable = "true";
+            } else {
+                feedbackEl.innerHTML = `<span class="text-brand-danger font-medium flex items-center"><i class="bi bi-x-circle-fill mr-1"></i> ${escapeHtml(res.message || "Email already registered")}</span>`;
+                inputEl.classList.add("border-brand-danger");
+                inputEl.classList.remove("border-emerald-500");
+                inputEl.dataset.isAvailable = "false";
+            }
+        } catch (err) {
+            console.error("Email check failed:", err);
+            feedbackEl.innerHTML = "";
+            delete inputEl.dataset.isAvailable;
+        }
+    };
+
+    const debouncedCheck = debounce(checkEmail, 350);
+
+    inputEl.addEventListener("keyup", debouncedCheck);
+    inputEl.addEventListener("input", debouncedCheck);
+    inputEl.addEventListener("blur", checkEmail);
+}
+
 async function api(path, options = {}) {
     const headers = { "Content-Type": "application/json" };
     if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
@@ -78,6 +142,12 @@ async function initUser() {
         state.user = await api("/api/users/me");
         qs("#user-dropdown-username").textContent = state.user.username;
         qs("#user-dropdown-role").textContent = state.user.role.toUpperCase();
+
+        // Redirect regular user away from User Management
+        if (state.user.role === "user") {
+            window.location.href = "/dashboard";
+            return;
+        }
 
         const navBanks = qs("#nav-banks-link");
         const navBranches = qs("#nav-branches-link");
@@ -241,9 +311,18 @@ const userBankWrapper = qs("#user-bank-wrapper");
 const userBranchWrapper = qs("#user-branch-wrapper");
 function updateAddBankVisibility() {
     const role = userRoleSelect ? userRoleSelect.value : "user";
-    const needsBank = role === "user" || role === "bank_admin";
+    const needsBank = (role === "user" || role === "bank_admin") && state.user?.role !== "bank_admin";
     if (userBankWrapper) userBankWrapper.style.display = needsBank ? "" : "none";
-    if (userBranchWrapper) userBranchWrapper.style.display = needsBank ? "" : "none";
+    if (userBranchWrapper) userBranchWrapper.style.display = "block";
+
+    if (state.user?.role === "bank_admin" && userRoleSelect) {
+        qsa("#user-role option").forEach(opt => {
+            if (opt.value === "super_admin" || opt.value === "admin") {
+                opt.hidden = true;
+                opt.disabled = true;
+            }
+        });
+    }
 }
 if (userRoleSelect) {
     userRoleSelect.addEventListener("change", updateAddBankVisibility);
@@ -255,9 +334,18 @@ const editUserBankWrapper = qs("#edit-user-bank-wrapper");
 const editUserBranchWrapper = qs("#edit-user-branch-wrapper");
 function updateEditBankVisibility() {
     const role = editUserRoleSelect ? editUserRoleSelect.value : "user";
-    const needsBank = role === "user" || role === "bank_admin";
+    const needsBank = (role === "user" || role === "bank_admin") && state.user?.role !== "bank_admin";
     if (editUserBankWrapper) editUserBankWrapper.style.display = needsBank ? "" : "none";
-    if (editUserBranchWrapper) editUserBranchWrapper.style.display = needsBank ? "" : "none";
+    if (editUserBranchWrapper) editUserBranchWrapper.style.display = "block";
+
+    if (state.user?.role === "bank_admin" && editUserRoleSelect) {
+        qsa("#edit-user-role option").forEach(opt => {
+            if (opt.value === "super_admin" || opt.value === "admin") {
+                opt.hidden = true;
+                opt.disabled = true;
+            }
+        });
+    }
 }
 if (editUserRoleSelect) {
     editUserRoleSelect.addEventListener("change", updateEditBankVisibility);
@@ -293,6 +381,12 @@ qs("#add-user-form")?.addEventListener("submit", async (e) => {
     const password = qs("#user-password").value.trim();
     const errEl = qs("#add-user-error");
     if (errEl) errEl.textContent = "";
+
+    const userEmailEl = qs("#user-email");
+    if (userEmailEl && userEmailEl.dataset.isAvailable === "false") {
+        if (errEl) errEl.textContent = "Please fix duplicate/invalid email address before saving.";
+        return;
+    }
 
     if (submitBtn) {
         submitBtn.disabled = true;
@@ -365,6 +459,12 @@ qs("#edit-user-form")?.addEventListener("submit", async (e) => {
     const errEl = qs("#edit-user-error");
     if (errEl) errEl.textContent = "";
 
+    const editEmailEl = qs("#edit-user-email");
+    if (editEmailEl && editEmailEl.dataset.isAvailable === "false") {
+        if (errEl) errEl.textContent = "Please fix duplicate/invalid email address before saving.";
+        return;
+    }
+
     const payload = { username, email, whatsapp_number: whatsappNumber, role, bank_id, branch_id, is_active: isActive };
     if (password) payload.password = password;
 
@@ -405,4 +505,8 @@ window.deleteUser = async function(id, username) {
     }
 };
 
-document.addEventListener("DOMContentLoaded", initUser);
+document.addEventListener("DOMContentLoaded", () => {
+    initUser();
+    attachEmailAvailabilityCheck("user-email", "user-email-feedback");
+    attachEmailAvailabilityCheck("edit-user-email", "edit-user-email-feedback", () => qs("#edit-user-id")?.value);
+});

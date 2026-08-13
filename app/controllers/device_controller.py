@@ -22,21 +22,30 @@ router = APIRouter(prefix="/api/devices", tags=["Devices"])
 def check_device_access(device: Device, user: User):
     if user.role in ["super_admin", "admin"]:
         return
-    if user.role == "bank_admin" and device.bank_id == user.bank_id:
-        return
-    if user.role == "user" and (device.assigned_user_id == user.id or device.bank_id == user.bank_id):
-        return
+    if user.role == "bank_admin":
+        if user.bank_id and device.bank_id == user.bank_id:
+            return
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to devices outside your bank")
+    if user.role == "user":
+        if user.bank_id and device.bank_id and device.bank_id != user.bank_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to devices outside your bank")
+        if user.branch_id:
+            if device.branch_id == user.branch_id or device.assigned_user_id == user.id or device.assigned_user_2_id == user.id or device.owner_id == user.id:
+                return
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to devices outside your branch")
+        if user.bank_id and device.bank_id == user.bank_id:
+            return
+        if device.assigned_user_id == user.id or device.assigned_user_2_id == user.id or device.owner_id == user.id:
+            return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 def check_device_admin_access(device: Device, user: User):
     if user.role in ["super_admin", "admin"]:
         return
-    if user.role == "bank_admin" and device.bank_id == user.bank_id:
+    if user.role == "bank_admin" and user.bank_id and device.bank_id == user.bank_id:
         return
-    if user.role == "user" and (device.assigned_user_id == user.id or device.owner_id == user.id or device.bank_id == user.bank_id):
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can modify devices")
 
 
 @router.post("/")
@@ -50,6 +59,8 @@ def create_device(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create devices",
         )
+    if current_user.role == "bank_admin":
+        device.bank_id = current_user.bank_id
     return create_device_service(db, device, current_user)
 
 

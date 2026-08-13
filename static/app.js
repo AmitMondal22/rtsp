@@ -434,6 +434,12 @@ function updateSendButtonState() {
 async function init() {
     try {
         state.user = await api("/api/users/me");
+        if (!["super_admin", "admin", "bank_admin"].includes(state.user.role)) {
+            state.token = null;
+            localStorage.removeItem("token");
+            window.location.href = "/";
+            return;
+        }
     } catch (err) {
         console.error("Auto-login failed:", err);
         state.token = null;
@@ -520,7 +526,9 @@ async function loadDevices() {
         state.devices = await api("/api/devices/");
         renderDeviceList();
         populateCameraDropdown();
-        loadBankUsers();
+        if (state.user && state.user.role !== "user") {
+            loadBankUsers();
+        }
     } catch (err) {
         console.error("Failed to load devices:", err);
     }
@@ -1236,7 +1244,7 @@ if (tabLoginBtn && tabRegisterBtn) {
 }
 
 async function loadBanks() {
-    if (!state.token) return;
+    if (!state.token || !state.user || state.user.role === "user") return;
     try {
         const banks = await api("/api/banks/");
         state.banks = banks;
@@ -1277,7 +1285,7 @@ async function loadBanks() {
 }
 
 async function loadBankUsers() {
-    if (!state.token) return;
+    if (!state.token || !state.user || state.user.role === "user") return;
     try {
         await loadBanks();  // always refresh bank dropdown + table
         const users = await api("/api/banks/users");
