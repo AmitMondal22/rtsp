@@ -116,9 +116,10 @@ async def check_device_health(
     if not rtsp_url:
         return False
 
+    pref_transport = getattr(device, "transport", None) or "tcp"
     reachable, transport_used = await validate_rtsp_with_fallback(
         rtsp_url,
-        preferred_transport=device.transport or "tcp",
+        preferred_transport=pref_transport,
         timeout=timeout,
     )
 
@@ -129,7 +130,8 @@ async def check_device_health(
     if reachable:
         device.is_online = True
         device.last_seen = now
-        device.transport = transport_used  # Update to working transport
+        if hasattr(device, "transport"):
+            setattr(device, "transport", transport_used)
     else:
         device.is_online = False
 

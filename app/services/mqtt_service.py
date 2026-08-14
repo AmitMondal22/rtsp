@@ -17,6 +17,7 @@ def on_connect(client, userdata, flags, rc):
     if rc == 0:
         logger.info("MQTT connected successfully")
         client.subscribe("/OTP/REQUEST/#", qos=1)
+        client.subscribe("/OTP/STATUS/#", qos=1)
     else:
         logger.warning("MQTT connection failed with code %d", rc)
 
@@ -37,8 +38,49 @@ def on_message(client, userdata, msg):
 
         db = SessionLocal()
         try:
-            # Topic format: /OTP/REQUEST/DEVICENAME
             parts = msg.topic.strip("/").split("/")
+            
+            # Check if this is an OTP status report message (/OTP/STATUS/{device_id})
+            if len(parts) >= 2 and parts[1].upper() == "STATUS":
+                device_ident = parts[-1] if len(parts) > 2 else ""
+                device = None
+                if device_ident.isdigit():
+                    device = db.query(Device).filter(Device.id == int(device_ident)).first()
+                if not device and device_ident:
+                    device = db.query(Device).filter(Device.name == device_ident).first()
+                if not device:
+                    device = db.query(Device).first()
+
+                if device:
+                    from app.models.otp_bulk import DeviceOfflineOTP
+                    clean_p = payload_str.strip().rstrip("#").lstrip("*")
+                    otps_extracted = []
+                    if "OFFOTP" in clean_p:
+                        p_parts = clean_p.split(",")
+                        otps_extracted = p_parts[3:] if len(p_parts) > 3 else []
+                    elif payload_str.startswith("{"):
+                        try:
+                            jdata = json.loads(payload_str)
+                            otps_extracted = jdata.get("otps", [])
+                        except Exception:
+                            pass
+                    else:
+                        otps_extracted = clean_p.split(",")
+
+                    if otps_extracted:
+                        existing_otps = {o.slot_number: o for o in db.query(DeviceOfflineOTP).filter(DeviceOfflineOTP.device_id == device.id).all()}
+                        for idx in range(1, 101):
+                            val = otps_extracted[idx - 1] if (idx - 1) < len(otps_extracted) else ""
+                            if idx in existing_otps:
+                                existing_otps[idx].otp_code = str(val).strip()
+                            else:
+                                new_o = DeviceOfflineOTP(device_id=device.id, slot_number=idx, otp_code=str(val).strip(), status="active")
+                                db.add(new_o)
+                        db.commit()
+                        logger.info("Updated bulk offline OTPs for device %s (id: %d) from MQTT status", device.name, device.id)
+                return
+
+            # Default: Topic format: /OTP/REQUEST/DEVICENAME
             device_name = parts[-1] if len(parts) > 1 else None
 
             device = None
@@ -142,3 +184,27 @@ def publish_otp_to_device(device_name: str, otp1: str, otp2: str = "") -> bool:
     except Exception as e:
         logger.error("Failed to publish MQTT message to %s: %s", topic, e)
         return False
+
+
+def publish_bulk_otp_to_device(device_identifier: str, otp_list: list) -> bool:
+    global mqtt_client
+    if not mqtt_client:
+        logger.error("MQTT client not initialized")
+        return False
+
+    clean_id = (str(device_identifier) or "").strip().lstrip("/")
+    topic = f"/OTP/{clean_id}" if not clean_id.startswith("OTP/") else f"/{clean_id}"
+
+    # Ensure exactly 100 entries, formatted as string
+    otps_padded = [(str(otp_list[i]) if i < len(otp_list) else "") for i in range(100)]
+    payload = f"*OFFOTP,BULK,1,{','.join(otps_padded)}#"
+
+    try:
+        info = mqtt_client.publish(topic, payload, qos=1)
+        info.wait_for_publish()
+        logger.info("Published Bulk OTP to %s (%d items)", topic, len(otp_list))
+        return True
+    except Exception as e:
+        logger.error("Failed to publish bulk OTP MQTT message to %s: %s", topic, e)
+        return False
+

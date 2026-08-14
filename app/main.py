@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from app.database import engine, Base
 from app.config import settings
-from app.controllers import auth_controller, device_controller, camera_controller, bank_controller
+from app.controllers import auth_controller, device_controller, camera_controller, bank_controller, otp_controller
 from app.streaming import start_health_monitor, stop_health_monitor
 from app.services.mqtt_service import start_mqtt_client, stop_mqtt_client
 
@@ -39,6 +39,10 @@ def auto_migrate():
             "ALTER TABLE users DROP CONSTRAINT IF EXISTS ix_users_username;",
             "DROP INDEX IF EXISTS ix_users_username;",
             "CREATE INDEX IF NOT EXISTS ix_users_username ON users (username);",
+            "ALTER TABLE offline_otps DROP CONSTRAINT IF EXISTS offline_otps_device_id_fkey;",
+            "ALTER TABLE offline_otps ADD CONSTRAINT offline_otps_device_id_fkey FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE;",
+            "ALTER TABLE device_offline_otps DROP CONSTRAINT IF EXISTS device_offline_otps_device_id_fkey;",
+            "ALTER TABLE device_offline_otps ADD CONSTRAINT device_offline_otps_device_id_fkey FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE;",
         ]
         for query in migrations:
             try:
@@ -182,6 +186,7 @@ app.include_router(auth_controller.router)
 app.include_router(device_controller.router)
 app.include_router(camera_controller.router)
 app.include_router(bank_controller.router)
+app.include_router(otp_controller.router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -211,6 +216,12 @@ def serve_users():
 @app.get("/branches")
 def serve_branches():
     return FileResponse("templates/branches.html")
+
+
+@app.get("/manage-otp")
+@app.get("/offline-otp")
+def serve_offline_otp():
+    return FileResponse("templates/offline_otp.html")
 
 
 @app.get("/health")

@@ -414,10 +414,10 @@ async def validate_stream(
     device = get_device_by_id(db, device_id)
     check_device_access(device, current_user)
 
-    rtsp_url = build_rtsp_url(device)
+    pref_transport = getattr(device, "transport", None) or "tcp"
     is_valid, transport_used = await validate_rtsp_with_fallback(
         rtsp_url,
-        preferred_transport=device.transport or "tcp",
+        preferred_transport=pref_transport,
     )
     return {
         "device_id": device_id,

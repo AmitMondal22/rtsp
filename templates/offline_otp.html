@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Manage Offline OTP – IOTBLITZ" />
+    <title>Manage Offline OTP – IOTBLITZ</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            purple: '#9060ff',
+                            blue: '#1a8cff',
+                            darkBg: '#111217',
+                            sidebar: '#1c1d22',
+                            iconbar: '#15161b',
+                            cardBg: '#1e1f25',
+                            border: '#2b2c33',
+                            muted: '#85868e',
+                            danger: '#ef4444',
+                            success: '#10b981',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="/static/style.css?v=1.2" />
+</head>
+
+<body class="bg-brand-darkBg text-slate-100 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-brand-blue selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <nav class="bg-brand-sidebar border-b border-brand-border px-4 py-2 flex items-center justify-between shrink-0 select-none">
+        <div class="flex items-center space-x-4">
+            <a class="text-brand-purple font-bold tracking-widest text-xs uppercase flex items-center" href="/dashboard">
+                <i class="bi bi-camera-video-fill mr-2.5"></i> IOTBLITZ
+            </a>
+            <div class="border-l border-brand-border pl-4 flex items-center space-x-1 text-brand-muted text-xs">
+                <i class="bi bi-key-fill mr-1 text-brand-purple"></i>
+                <span class="text-white font-semibold">Offline OTP Management</span>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-4">
+            <!-- Account Dropdown -->
+            <div class="relative inline-block text-left" id="user-profile-dropdown">
+                <button class="hover:text-white transition cursor-pointer flex items-center focus:outline-none"
+                    id="user-menu-btn" title="User Profile">
+                    <i class="bi bi-person-circle text-slate-300 hover:text-white text-lg"></i>
+                </button>
+                <div id="user-dropdown-menu"
+                    class="absolute right-0 mt-2.5 w-48 bg-brand-cardBg border border-brand-border rounded shadow-2xl py-2 z-50 hidden">
+                    <div class="px-3 py-1 border-b border-brand-border text-brand-muted text-[9px] font-bold uppercase tracking-wider">Account Info</div>
+                    <div class="px-3 py-2 text-[11px] text-slate-300">
+                        <span class="block font-semibold text-white truncate" id="user-dropdown-username">Username</span>
+                        <span class="block text-brand-muted text-[10px] mt-0.5" id="user-dropdown-role">ROLE</span>
+                    </div>
+                    <div class="border-t border-brand-border my-1"></div>
+                    <button id="logout-btn" class="w-full text-left px-3 py-1.5 hover:bg-brand-border hover:text-white text-[11px] text-brand-danger transition flex items-center">
+                        <i class="bi bi-box-arrow-right mr-2"></i> Log Out
+                    </button>
+                </div>
+            </div>
+
+            <!-- Clock -->
+            <div class="border-l border-brand-border pl-4 text-right leading-tight font-mono select-none" style="font-size: 10px;">
+                <div id="nav-clock" class="text-white font-semibold">12:34:00 AM</div>
+                <div id="nav-date" class="text-brand-muted">2026/08/14</div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Page Body -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Left Icon Sidebar -->
+        <aside class="w-14 bg-brand-iconbar border-r border-brand-border flex flex-col items-center py-4 space-y-4 shrink-0">
+            <a href="/dashboard" title="Cameras & Live Feed"
+                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
+                <i class="bi bi-camera-video-fill text-base"></i>
+            </a>
+            <a href="/banks" title="Bank Management"
+                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
+                <i class="bi bi-bank text-base"></i>
+            </a>
+            <a href="/branches" id="nav-branches-link" title="Branch Management"
+                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
+                <i class="bi bi-diagram-3-fill text-base"></i>
+            </a>
+            <a href="/users" id="nav-users-link" title="User Management"
+                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
+                <i class="bi bi-people text-base"></i>
+            </a>
+            <a href="/manage-otp" title="Manage OTP"
+                class="w-8 h-8 rounded flex items-center justify-center text-white bg-brand-purple active:scale-95 transition">
+                <i class="bi bi-key-fill text-base"></i>
+            </a>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 bg-brand-darkBg overflow-y-auto p-6">
+            <div class="max-w-7xl mx-auto space-y-6">
+
+                <!-- Page Header -->
+                <div class="flex items-center justify-between border-b border-brand-border pb-4">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-xl bg-brand-purple/15 border border-brand-purple/30 flex items-center justify-center text-brand-purple text-xl">
+                            <i class="bi bi-shield-lock-fill"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-lg font-bold text-white flex items-center gap-2">
+                                Bulk Offline OTP Configuration
+                                <span class="bg-brand-purple/20 text-brand-purple text-[10px] px-2 py-0.5 rounded-full border border-brand-purple/30 font-semibold uppercase tracking-wider">MQTT Bulk Packet</span>
+                            </h1>
+                            <p class="text-xs text-brand-muted">Select Bank, Branch, and Device to configure and publish 100 Offline OTP codes via MQTT topic <code class="text-brand-purple font-mono">/OTP/{device_id}</code></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Selection Card (Bank -> Branch -> Device) -->
+                <div class="bg-brand-sidebar border border-brand-border rounded-xl p-5 shadow-xl">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <!-- Select Bank -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center">
+                                <i class="bi bi-bank mr-1.5 text-brand-blue"></i> 1. Select Bank
+                            </label>
+                            <select id="otp-bank-select" class="w-full bg-brand-cardBg border border-brand-border rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-purple transition">
+                                <option value="">-- Choose Bank --</option>
+                            </select>
+                        </div>
+
+                        <!-- Select Branch -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center">
+                                <i class="bi bi-diagram-3-fill mr-1.5 text-emerald-400"></i> 2. Select Branch
+                            </label>
+                            <select id="otp-branch-select" disabled class="w-full bg-brand-cardBg border border-brand-border rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-purple transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                <option value="">-- Select Bank First --</option>
+                            </select>
+                        </div>
+
+                        <!-- Select Device -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center">
+                                <i class="bi bi-camera-video-fill mr-1.5 text-brand-purple"></i> 3. Select Device
+                            </label>
+                            <select id="otp-device-select" disabled class="w-full bg-brand-cardBg border border-brand-border rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-purple transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                <option value="">-- Select Branch First --</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Device Info & Action Controls -->
+                <div id="device-selected-container" class="hidden space-y-6">
+                    <div class="bg-brand-cardBg border border-brand-border rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-lg">
+                                <i class="bi bi-cpu-fill"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-bold text-white flex items-center gap-2" id="active-device-name">
+                                    Device Name
+                                </h3>
+                                <div class="flex items-center space-x-3 text-[11px] text-brand-muted mt-0.5">
+                                    <span>ID: <strong class="text-slate-200" id="active-device-id">-</strong></span>
+                                    <span>•</span>
+                                    <span>Topic: <code class="text-brand-blue font-mono" id="active-device-topic">/OTP/1</code></span>
+                                    <span>•</span>
+                                    <span>Last Sync: <span class="text-slate-300" id="active-device-last-sync">Never</span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quick Tools & Actions -->
+                        <div class="flex items-center flex-wrap gap-2">
+                            <button id="btn-auto-1001" type="button" title="Fill 1001 to 1100" class="px-3 py-1.5 bg-brand-border hover:bg-brand-border/80 active:scale-95 transition rounded-lg text-[11px] font-semibold text-slate-200 flex items-center">
+                                <i class="bi bi-sort-numeric-down mr-1 text-brand-blue"></i> Fill 1001-1100
+                            </button>
+                            <button id="btn-auto-random" type="button" title="Generate 100 random 4-digit codes" class="px-3 py-1.5 bg-brand-border hover:bg-brand-border/80 active:scale-95 transition rounded-lg text-[11px] font-semibold text-slate-200 flex items-center">
+                                <i class="bi bi-shuffle mr-1 text-amber-400"></i> Random 4-Digit
+                            </button>
+                            <button id="btn-clear-all" type="button" title="Clear all fields" class="px-3 py-1.5 bg-brand-border hover:bg-brand-danger/20 hover:text-brand-danger active:scale-95 transition rounded-lg text-[11px] font-semibold text-slate-300 flex items-center">
+                                <i class="bi bi-trash mr-1"></i> Clear
+                            </button>
+                            <div class="h-5 border-r border-brand-border mx-1 hidden sm:block"></div>
+                            <button id="save-otps-btn" type="button" class="px-3.5 py-1.5 bg-brand-border hover:bg-slate-700 active:scale-95 transition text-white font-bold rounded-lg text-xs flex items-center shadow">
+                                <i class="bi bi-floppy-fill mr-1.5"></i> Save Only
+                            </button>
+                            <button id="save-publish-otps-btn" type="button" class="px-4 py-1.5 bg-gradient-to-r from-brand-purple to-brand-blue hover:opacity-90 active:scale-95 transition text-white font-bold rounded-lg text-xs flex items-center shadow-lg">
+                                <i class="bi bi-send-fill mr-1.5"></i> Save & Publish MQTT
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 100 OTP Input Grid -->
+                    <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-4">
+                        <div class="flex items-center justify-between border-b border-brand-border pb-3">
+                            <div class="flex items-center space-x-2">
+                                <i class="bi bi-grid-3x3-gap-fill text-brand-purple text-base"></i>
+                                <h2 class="text-sm font-bold text-white">100 Offline OTP Table</h2>
+                            </div>
+                            <span class="text-xs text-brand-muted">Packet format: <code class="text-brand-purple font-mono text-[11px]">*OFFOTP,BULK,1,otp1,otp2,...,otp100#</code></span>
+                        </div>
+
+                        <form id="bulk-otp-form" onsubmit="return false;">
+                            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-2.5" id="otp-inputs-grid">
+                                <!-- Generated by JS: 100 input items -->
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Empty State Prompt -->
+                <div id="no-device-prompt" class="bg-brand-sidebar border border-brand-border rounded-xl p-12 text-center space-y-3">
+                    <div class="w-12 h-12 rounded-full bg-brand-cardBg border border-brand-border flex items-center justify-center text-brand-muted text-xl mx-auto">
+                        <i class="bi bi-hand-index-thumb"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-white">No Device Selected</h3>
+                    <p class="text-xs text-brand-muted max-w-sm mx-auto">Please select a Bank, Branch, and Device from the dropdowns above to view, configure, and publish bulk offline OTP numbers.</p>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
+    <script src="/static/offline_otp.js?v=1.0"></script>
+</body>
+
+</html>

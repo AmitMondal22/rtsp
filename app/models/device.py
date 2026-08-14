@@ -54,4 +54,5 @@ class Device(Base):
     assigned_user_2 = relationship("User", foreign_keys=[assigned_user_2_id])
     messages = relationship("ThreadMessage", back_populates="device", cascade="all, delete-orphan")
     otp_codes = relationship("OTPCode", back_populates="device", cascade="all, delete-orphan")
+    offline_otps = relationship("DeviceOfflineOTP", back_populates="device", cascade="all, delete-orphan")
 
