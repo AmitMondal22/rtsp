@@ -172,27 +172,24 @@ def run_verification():
         assert len(direct_records) >= 30
         assert direct_records[0].otp_code == "4444", f"Expected '4444' at slot 1, got '{direct_records[0].otp_code}'"
         assert direct_records[29].otp_code == "2DF4", f"Expected '2DF4' at slot 30, got '{direct_records[29].otp_code}'"
-        # 4e. Test Action Control "OFFLINE OTP" mode (random unused OTP selection & MQTT bypass)
-        from app.models.message import ThreadMessage
-        pending_msg = ThreadMessage(device_id=device.id, sender_id=user.id, content="Device OTP request test", message_type="otp_request")
-        db.add(pending_msg)
-        db.commit()
-
+        # 4e. Test Action Control "OFFLINE OTP" mode (dual-user random unused OTP selection & MQTT bypass)
         action_resp = client.post(f"/api/camera/{device.id}/send-action", json={"mode": "offline_otp"}, headers=headers)
         assert action_resp.status_code == 200, f"send-action offline_otp failed: {action_resp.text}"
         action_data = action_resp.json()
         assert action_data["mode"] == "offline_otp"
         assert action_data["mqtt_sent"] is False, "Expected MQTT publishing to be bypassed for OFFLINE OTP"
-        sent_code = action_data["otp_code"]
-        assert sent_code != "", "Expected non-empty OTP code"
+        assert "user1_username" in action_data, "Expected user1_username in response"
+        assert "user2_username" in action_data, "Expected user2_username in response"
+        assert "slot1" in action_data, "Expected slot1 in response"
+        assert "slot2" in action_data, "Expected slot2 in response"
+        assert action_data["slot1"] != action_data["slot2"], "Expected two different slots"
 
-        # Check DB status of sent OTP code
+        # Check DB status of sent OTP slots
         db.expire_all()
-        slot_num = action_data.get("slot_number")
-        if slot_num:
-            sent_rec = db.query(DeviceOfflineOTP).filter(DeviceOfflineOTP.device_id == device.id, DeviceOfflineOTP.slot_number == slot_num).first()
-            assert sent_rec.status == "sent", f"Expected slot #{slot_num} status to be 'sent', got '{sent_rec.status}'"
-        print(f"[OK] Verified Action Control 'OFFLINE OTP' mode: Random OTP code '{sent_code}' (slot #{slot_num}) selected, status set to 'sent', and MQTT publication bypassed.")
+        for sn in (action_data["slot1"], action_data["slot2"]):
+            sent_rec = db.query(DeviceOfflineOTP).filter(DeviceOfflineOTP.device_id == device.id, DeviceOfflineOTP.slot_number == sn).first()
+            assert sent_rec.status == "sent", f"Expected slot #{sn} status to be 'sent', got '{sent_rec.status}'"
+        print(f"[OK] Verified Action Control 'OFFLINE OTP' mode: Dual OTPs (slots #{action_data['slot1']} & #{action_data['slot2']}) sent to {action_data['user1_username']} & {action_data['user2_username']}, MQTT bypassed.")
 
         # 5. Test Device Deletion (verifying Foreign Key Cascade behavior)
         del_device = Device(name="Delete_Test_Cam", bank_id=bank.id, branch_id=branch.id, owner_id=user.id)
