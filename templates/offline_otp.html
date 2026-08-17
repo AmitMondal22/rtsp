@@ -120,7 +120,7 @@
                                 Bulk Offline OTP Configuration
                                 <span class="bg-brand-purple/20 text-brand-purple text-[10px] px-2 py-0.5 rounded-full border border-brand-purple/30 font-semibold uppercase tracking-wider">MQTT Bulk Packet</span>
                             </h1>
-                            <p class="text-xs text-brand-muted">Select Bank, Branch, and Device to configure and publish 100 Offline OTP codes via MQTT topic <code class="text-brand-purple font-mono">/OTP/{device_id}</code></p>
+                            <p class="text-xs text-brand-muted">Select Bank, Branch, and Device to configure and publish 100 Offline OTP codes via MQTT topic <code class="text-brand-purple font-mono">/OTP/{device_name}</code></p>
                         </div>
                     </div>
                 </div>
@@ -174,7 +174,7 @@
                                 <div class="flex items-center space-x-3 text-[11px] text-brand-muted mt-0.5">
                                     <span>ID: <strong class="text-slate-200" id="active-device-id">-</strong></span>
                                     <span>•</span>
-                                    <span>Topic: <code class="text-brand-blue font-mono" id="active-device-topic">/OTP/1</code></span>
+                                    <span>Topic: <code class="text-brand-blue font-mono" id="active-device-topic">/OTP/DeviceName</code></span>
                                     <span>•</span>
                                     <span>Last Sync: <span class="text-slate-300" id="active-device-last-sync">Never</span></span>
                                 </div>

@@ -177,7 +177,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         activeDeviceName.textContent = currentDeviceName || `Device #${currentDeviceId}`;
         activeDeviceId.textContent = currentDeviceId;
-        activeDeviceTopic.textContent = `/OTP/${currentDeviceId}`;
+        activeDeviceTopic.textContent = `/OTP/${currentDeviceName || currentDeviceId}`;
 
         loadDeviceOTPs(currentDeviceId);
     });
@@ -280,7 +280,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (resData.status === "success") {
                     let msg = `Successfully saved 100 OTPs for device.`;
                     if (publishMqtt) {
-                        msg += ` Published packet *OFFOTP,BULK,1,...# to MQTT topic /OTP/${currentDeviceId}`;
+                        msg += ` Published packet *OFFOTP,BULK,1,...# to MQTT topic /OTP/${currentDeviceName || currentDeviceId}`;
                     }
                     showToast(msg, "success");
                     activeDeviceLastSync.textContent = new Date().toLocaleString();

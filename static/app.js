@@ -396,12 +396,25 @@ function updateSendButtonState() {
 
     if (btn.classList.contains("sending")) return;
 
+    const modeEl = document.getElementById("mode-dropdown");
+    const currentMode = modeEl ? modeEl.value : "";
+    const hint = qs(".mode-action-hint");
+
     if (!state.selectedDeviceId) {
         btn.disabled = true;
-        const hint = qs(".mode-action-hint");
         if (hint) {
             hint.innerHTML = `<i class="bi bi-info-circle mr-1"></i> Select a camera device`;
             hint.className = "mode-action-hint text-brand-muted text-[10px]";
+        }
+        return;
+    }
+
+    // OFFLINE OTP mode: always enabled regardless of pending device request
+    if (currentMode === "offline_otp") {
+        btn.disabled = false;
+        if (hint) {
+            hint.innerHTML = `<i class="bi bi-key text-purple-400 mr-1"></i> Offline OTP Ready (No Device Request Needed)`;
+            hint.className = "mode-action-hint text-purple-400 text-[10px]";
         }
         return;
     }
@@ -410,9 +423,6 @@ function updateSendButtonState() {
         req => req.device_id === state.selectedDeviceId && req.message_type === "otp_request"
     );
 
-    const hint = qs(".mode-action-hint");
-
-    // Enable Send button ONLY if an active unacknowledged hardware OTP request is pending
     if (deviceRequests.length > 0) {
         btn.disabled = false;
         if (hint) {
@@ -630,6 +640,11 @@ function selectDevice(deviceId) {
     updateSendButtonState();
 }
 window.selectDevice = selectDevice;
+
+// Re-evaluate button state whenever the Action Control mode dropdown changes
+qs("#mode-dropdown").addEventListener("change", () => {
+    updateSendButtonState();
+});
 
 function showDeviceView(device) {
     stopAllStreams();
@@ -1010,6 +1025,13 @@ qs("#send-action-btn").addEventListener("click", async () => {
         return;
     }
 
+    // For OFFLINE OTP, force-enable regardless of disabled state from polling race
+    const _modeEl = document.getElementById("mode-dropdown");
+    const _mode = _modeEl ? _modeEl.value : "";
+    if (_mode === "offline_otp") {
+        qs("#send-action-btn").disabled = false;
+    }
+
     const mode = qs("#mode-dropdown").value;
     const btn = qs("#send-action-btn");
     const statusIndicator = qs("#mode-status-indicator");
@@ -1036,6 +1058,10 @@ qs("#send-action-btn").addEventListener("click", async () => {
             showToast(`Thread: OTP generated. ${emailStatus}`, result.email_sent ? "success" : "info");
         } else if (mode === "no_threat") {
             showToast(`NO THREAT: Dual OTP generated for ${result.user1_username || "User 1"} & ${result.user2_username || "User 2"}!`, "success");
+        } else if (mode === "offline_otp") {
+            const e1 = result.email_sent1 ? "📧" : "⚠️";
+            const e2 = result.email_sent2 ? "📧" : "⚠️";
+            showToast(`OFFLINE OTP: ${e1} ${result.user1_username || "User 1"} & ${e2} ${result.user2_username || "User 2"} — Email only (MQTT Bypassed)!`, "success");
         } else {
             showToast("No Thread — message saved locally.", "info");
         }
@@ -1097,6 +1123,25 @@ function showActionResult(result) {
                 </div>
                 <div class="text-[10px] text-emerald-400 font-mono text-center pt-1">
                     <i class="bi bi-broadcast mr-1"></i> Published to MQTT: ${result.mqtt_sent ? "Success" : "Offline"}
+                </div>
+            </div>
+        `;
+    } else if (m === "offline_otp") {
+        title.innerHTML = '<i class="bi bi-key mr-2 text-purple-400"></i> OFFLINE OTP — Dispatched';
+        body.innerHTML = `
+            <div class="space-y-2">
+                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
+                    <div class="text-[10px] text-brand-muted uppercase font-bold mb-1">1st User (${escapeHtml(result.user1_username || "User 1")})</div>
+                    <div class="text-[10px] text-brand-muted truncate">Email: ${escapeHtml(result.user1_email || "N/A")} (${result.email_sent1 ? "📧 Sent" : "Skipped"})</div>
+                    ${result.slot1 ? `<div class="text-[10px] text-purple-300 mt-1">Pool Slot: #${result.slot1}</div>` : ''}
+                </div>
+                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
+                    <div class="text-[10px] text-brand-muted uppercase font-bold mb-1">2nd User (${escapeHtml(result.user2_username || "User 2")})</div>
+                    <div class="text-[10px] text-brand-muted truncate">Email: ${escapeHtml(result.user2_email || "N/A")} (${result.email_sent2 ? "📧 Sent" : "Skipped"})</div>
+                    ${result.slot2 ? `<div class="text-[10px] text-purple-300 mt-1">Pool Slot: #${result.slot2}</div>` : ''}
+                </div>
+                <div class="text-[10px] text-amber-400 font-mono text-center pt-1">
+                    <i class="bi bi-envelope-check mr-1"></i> Email Only (MQTT Bypassed)
                 </div>
             </div>
         `;

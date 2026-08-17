@@ -442,7 +442,7 @@ def send_action(
     now = get_ist_now()
     five_minutes_ago = now - datetime.timedelta(minutes=5)
 
-    # Require an active unacknowledged hardware OTP request
+    # Check for active pending hardware OTP request
     pending_req = (
         db.query(ThreadMessage)
         .filter(
@@ -454,15 +454,16 @@ def send_action(
         .first()
     )
 
-    if not pending_req:
+    if not pending_req and mode not in ("offline_otp", "no_thread"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No active pending hardware OTP request found. OTP can only be sent once when a device request is pending."
         )
 
-    # Mark consumed (one-time send)
-    pending_req.message_type = "otp_request_ack"
-    db.commit()
+    if pending_req:
+        # Mark consumed (one-time send)
+        pending_req.message_type = "otp_request_ack"
+        db.commit()
 
     if mode == "thread":
         # Generate OTP + send email
@@ -635,20 +636,174 @@ def send_action(
         }
 
     else:
-        # No Thread mode — local message only, no email
-        from app.schemas.message import ThreadMessageCreate
-        msg_data = ThreadMessageCreate(
-            content="No Thread — message saved locally",
-            message_type="no_thread",
+        # Offline OTP mode — select TWO random unused OTP codes from device's offline pool
+        # Send to User 1 and User 2 (same logic as no_threat), ONLY via Email (MQTT bypassed)
+        from app.models.otp_bulk import DeviceOfflineOTP
+
+        # Query active unused offline OTP codes for this device
+        active_otps = (
+            db.query(DeviceOfflineOTP)
+            .filter(
+                DeviceOfflineOTP.device_id == device_id,
+                DeviceOfflineOTP.status == "active",
+                DeviceOfflineOTP.otp_code != "",
+                DeviceOfflineOTP.otp_code.isnot(None),
+                DeviceOfflineOTP.otp_code != "0000"
+            )
+            .all()
         )
-        msg = send_message_no_mqtt_service(db, device_id, current_user, msg_data)
+        if not active_otps:
+            active_otps = (
+                db.query(DeviceOfflineOTP)
+                .filter(
+                    DeviceOfflineOTP.device_id == device_id,
+                    DeviceOfflineOTP.status == "active",
+                    DeviceOfflineOTP.otp_code != "",
+                    DeviceOfflineOTP.otp_code.isnot(None)
+                )
+                .all()
+            )
+
+        if len(active_otps) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Not enough available offline OTPs for device '{device.name}'. Need at least 2 unused codes, found {len(active_otps)}. Please sync or configure offline OTP pool."
+            )
+
+        # Pick 2 different random OTPs from pool
+        selected_recs = random.sample(active_otps, 2)
+        otp1_rec = selected_recs[0]
+        otp2_rec = selected_recs[1]
+        otp1 = otp1_rec.otp_code.strip()
+        otp2 = otp2_rec.otp_code.strip()
+        slot1 = otp1_rec.slot_number
+        slot2 = otp2_rec.slot_number
+
+        # Mark both OTPs as sent/used in database
+        otp1_rec.status = "sent"
+        otp2_rec.status = "sent"
+        db.commit()
+
+        # Resolve User 1 & User 2 (same logic as no_threat)
+        u1_id = action_data.user_id_1
+        u2_id = action_data.user_id_2
+
+        candidate_ids = []
+        if u1_id:
+            candidate_ids.append(u1_id)
+        if u2_id:
+            candidate_ids.append(u2_id)
+        if device.branch:
+            for attr in ("otp1_user_id", "user1_id", "otp2_user_id", "user2_id"):
+                v = getattr(device.branch, attr, None)
+                if v:
+                    candidate_ids.append(v)
+        if device.assigned_user_id:
+            candidate_ids.append(device.assigned_user_id)
+        if getattr(device, "assigned_user_2_id", None):
+            candidate_ids.append(device.assigned_user_2_id)
+
+        user_map: dict[int, User] = {}
+        if candidate_ids:
+            fetched = db.query(User).filter(User.id.in_(set(candidate_ids))).all()
+            user_map = {u.id: u for u in fetched}
+
+        # Resolve User 1
+        def _resolve_u1() -> User:
+            if u1_id and u1_id in user_map:
+                return user_map[u1_id]
+            if device.branch:
+                for attr in ("otp1_user_id", "user1_id"):
+                    uid = getattr(device.branch, attr, None)
+                    if uid and uid in user_map:
+                        return user_map[uid]
+            if device.assigned_user_id and device.assigned_user_id in user_map:
+                return user_map[device.assigned_user_id]
+            return current_user
+
+        # Resolve User 2
+        def _resolve_u2(u1: User) -> User:
+            if u2_id and u2_id in user_map:
+                return user_map[u2_id]
+            if device.branch:
+                for attr in ("otp2_user_id", "user2_id"):
+                    uid = getattr(device.branch, attr, None)
+                    if uid and uid in user_map:
+                        return user_map[uid]
+            if getattr(device, "assigned_user_2_id", None) and device.assigned_user_2_id in user_map:
+                return user_map[device.assigned_user_2_id]
+            # Fallback: any other bank user
+            bank_id = device.bank_id or current_user.bank_id
+            if bank_id:
+                u2_fallback = db.query(User).filter(User.bank_id == bank_id, User.id != u1.id).first()
+                if u2_fallback:
+                    return u2_fallback
+            return u1
+
+        u1 = _resolve_u1()
+        u2 = _resolve_u2(u1)
+
+        # Check Branch OTP enable flags
+        enable_otp1 = getattr(device.branch, "enable_otp1", True) if device.branch else True
+        enable_otp2 = getattr(device.branch, "enable_otp2", True) if device.branch else True
+        if enable_otp1 is None:
+            enable_otp1 = True
+        if enable_otp2 is None:
+            enable_otp2 = True
+
+        # Send ONLY via Email (MQTT IS BYPASSED) — parallel delivery
+        enable_email = getattr(device, "enable_email", True) is not False
+
+        futures = {}
+        if enable_email and enable_otp1 and u1.email:
+            futures["email1"] = _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Offline Authorization OTP")
+        if enable_email and enable_otp2 and u2.email:
+            futures["email2"] = _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Offline Authorization OTP")
+
+        def _safe_result(key):
+            try:
+                return futures[key].result(timeout=10) if key in futures else False
+            except Exception:
+                return False
+
+        email_sent1 = _safe_result("email1")
+        email_sent2 = _safe_result("email2")
+
+        new_msg = ThreadMessage(
+            device_id=device.id,
+            sender_id=current_user.id,
+            content=f"Offline OTP: 1st OTP ({otp1}) sent to {u1.email}, 2nd OTP ({otp2}) sent to {u2.email}. (Email only, MQTT bypassed).",
+            message_type="offline_otp",
+            payload={
+                "recipient1": u1.username,
+                "recipient1_email": u1.email,
+                "recipient2": u2.username,
+                "recipient2_email": u2.email,
+                "email_sent1": email_sent1,
+                "email_sent2": email_sent2,
+                "slot1": slot1,
+                "slot2": slot2,
+                "mqtt_published": False,
+                "mqtt_topic": f"/OTP/{device.name}"
+            }
+        )
+        db.add(new_msg)
+        db.commit()
 
         return {
             "success": True,
-            "mode": "no_thread",
-            "message": "No Thread — message saved locally. No email sent.",
-            "msg_id": msg.id,
-            "email_sent": False,
+            "mode": "offline_otp",
+            "message": f"OFFLINE OTP: 1st OTP sent to {u1.username} ({u1.email}), 2nd OTP sent to {u2.username} ({u2.email}). Email only, MQTT bypassed.",
+            "user1_username": u1.username,
+            "user1_email": u1.email,
+            "user2_username": u2.username,
+            "user2_email": u2.email,
+            "email_sent1": email_sent1,
+            "email_sent2": email_sent2,
+            "email_sent": email_sent1 or email_sent2,
+            "mqtt_sent": False,
+            "slot1": slot1,
+            "slot2": slot2,
         }
 
 
@@ -667,7 +822,7 @@ def get_last_acknowledgment(
         db.query(ThreadMessage)
         .filter(
             ThreadMessage.device_id == device_id,
-            ThreadMessage.message_type.in_(["otp_request_ack", "otp_request", "no_threat", "thread"])
+            ThreadMessage.message_type.in_(["otp_request_ack", "otp_request", "no_threat", "thread", "offline_otp"])
         )
         .order_by(ThreadMessage.created_at.desc())
         .first()

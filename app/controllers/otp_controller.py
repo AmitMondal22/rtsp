@@ -66,18 +66,16 @@ def save_device_offline_otps(
 
     mqtt_sent = False
     if payload.publish_mqtt:
-        # Publish to /OTP/{device_id}
         mqtt_sent = publish_bulk_otp_to_device(str(device_id), otps)
-        # Also publish to /OTP/{device_name} if name is different
-        if device.name and device.name != str(device_id):
-            publish_bulk_otp_to_device(device.name, otps)
 
+    topic_str = f"/OTP/{device.name}"
     return {
         "status": "success",
         "message": f"Saved 100 OTPs for device {device.name}",
         "device_id": device_id,
+        "device_name": device.name,
         "mqtt_published": mqtt_sent,
-        "topic": f"/OTP/{device_id}"
+        "topic": topic_str
     }
 
 
@@ -96,13 +94,14 @@ def publish_device_offline_otps(
     otps = [otp_map.get(i, "") for i in range(1, 101)]
 
     mqtt_sent = publish_bulk_otp_to_device(str(device_id), otps)
-    if device.name and device.name != str(device_id):
-        publish_bulk_otp_to_device(device.name, otps)
 
+    topic_str = f"/OTP/{device.name}"
     return {
         "status": "success",
         "message": f"Published 100 OTPs to MQTT for device {device.name}",
         "device_id": device_id,
+        "device_name": device.name,
         "mqtt_published": mqtt_sent,
-        "topic": f"/OTP/{device_id}"
+        "topic": topic_str
     }
+

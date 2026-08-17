@@ -16,8 +16,7 @@ mqtt_client = None
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         logger.info("MQTT connected successfully")
-        client.subscribe("/OTP/REQUEST/#", qos=1)
-        client.subscribe("/OTP/STATUS/#", qos=1)
+        client.subscribe("/OTP/#", qos=1)
     else:
         logger.warning("MQTT connection failed with code %d", rc)
 
@@ -39,52 +38,118 @@ def on_message(client, userdata, msg):
         db = SessionLocal()
         try:
             parts = msg.topic.strip("/").split("/")
-            
-            # Check if this is an OTP status report message (/OTP/STATUS/{device_id})
-            if len(parts) >= 2 and parts[1].upper() == "STATUS":
-                device_ident = parts[-1] if len(parts) > 2 else ""
-                device = None
-                if device_ident.isdigit():
-                    device = db.query(Device).filter(Device.id == int(device_ident)).first()
-                if not device and device_ident:
-                    device = db.query(Device).filter(Device.name == device_ident).first()
-                if not device:
-                    device = db.query(Device).first()
+            jdata = data if isinstance(data, dict) else {}
+            payload_type = str(jdata.get("type", "")).strip()
 
-                if device:
-                    from app.models.otp_bulk import DeviceOfflineOTP
-                    clean_p = payload_str.strip().rstrip("#").lstrip("*")
-                    otps_extracted = []
-                    if "OFFOTP" in clean_p:
-                        p_parts = clean_p.split(",")
-                        otps_extracted = p_parts[3:] if len(p_parts) > 3 else []
-                    elif payload_str.startswith("{"):
-                        try:
-                            jdata = json.loads(payload_str)
-                            otps_extracted = jdata.get("otps", [])
-                        except Exception:
-                            pass
+            # Determine if this message is an offline OTP pool update / status message:
+            # 1. Topic is /OTP/STATUS/{device_name}, /OTP/RESPONSE/{device_name}, /OTP/POOL/{device_name}
+            # 2. Payload type is 'offline_otp_pool'
+            # 3. Payload contains 'otps' list or '*OFFOTP' header
+            is_otp_status = False
+            if len(parts) >= 2 and parts[1].upper() in ("STATUS", "RESPONSE", "POOL", "OFFLINE_OTP"):
+                is_otp_status = True
+            elif payload_type == "offline_otp_pool":
+                is_otp_status = True
+            elif jdata.get("otps") or ("OFFOTP" in payload_str):
+                is_otp_status = True
+
+            if is_otp_status:
+                # Topic identifier candidate
+                topic_ident = ""
+                if len(parts) >= 2:
+                    if parts[1].upper() in ("STATUS", "RESPONSE", "POOL", "OFFLINE_OTP"):
+                        topic_ident = parts[-1] if len(parts) > 2 and parts[-1].upper() not in ("STATUS", "RESPONSE", "POOL", "OFFLINE_OTP") else ""
                     else:
-                        otps_extracted = clean_p.split(",")
+                        topic_ident = parts[1]
 
-                    if otps_extracted:
-                        existing_otps = {o.slot_number: o for o in db.query(DeviceOfflineOTP).filter(DeviceOfflineOTP.device_id == device.id).all()}
-                        for idx in range(1, 101):
-                            val = otps_extracted[idx - 1] if (idx - 1) < len(otps_extracted) else ""
-                            if idx in existing_otps:
-                                existing_otps[idx].otp_code = str(val).strip()
-                            else:
-                                new_o = DeviceOfflineOTP(device_id=device.id, slot_number=idx, otp_code=str(val).strip(), status="active")
-                                db.add(new_o)
-                        db.commit()
-                        logger.info("Updated bulk offline OTPs for device %s (id: %d) from MQTT status", device.name, device.id)
+                # Collect candidate device identifiers from topic and JSON payload
+                candidates = []
+                if topic_ident:
+                    candidates.append(topic_ident)
+                if isinstance(jdata, dict):
+                    for key in ["device_id", "device_name", "deviceId", "deviceName"]:
+                        val = jdata.get(key)
+                        if val and str(val).strip() not in candidates:
+                            candidates.append(str(val).strip())
+
+                # Query device strictly by candidate identifiers (name or numeric ID)
+                device = None
+                for ident in candidates:
+                    if not ident:
+                        continue
+                    device = db.query(Device).filter(Device.name == ident).first()
+                    if not device and ident.isdigit():
+                        device = db.query(Device).filter(Device.id == int(ident)).first()
+                    if not device:
+                        device = db.query(Device).filter(Device.name.ilike(ident)).first()
+                    if device:
+                        break
+
+                if not device:
+                    logger.warning("Device not available in database for MQTT status/pool topic %s (candidates: %s)", msg.topic, candidates)
+                    return
+
+                from app.models.otp_bulk import DeviceOfflineOTP
+                clean_p = payload_str.strip().rstrip("#").lstrip("*")
+                otps_extracted = []
+
+                if isinstance(jdata, dict) and (jdata.get("otps") or jdata.get("data")):
+                    if jdata.get("otps") and isinstance(jdata["otps"], list):
+                        otps_extracted = [str(x).strip() for x in jdata["otps"]]
+                    elif jdata.get("data"):
+                        d_str = str(jdata["data"]).strip()
+                        if "," in d_str:
+                            otps_extracted = [x.strip() for x in d_str.split(",")]
+                        else:
+                            content_str = d_str
+                            if len(d_str) % 4 == 2:
+                                content_str = d_str[2:]
+                            otps_extracted = [content_str[i:i+4] for i in range(0, len(content_str), 4)]
+                elif "OFFOTP" in clean_p:
+                    p_parts = clean_p.split(",")
+                    otps_extracted = p_parts[3:] if len(p_parts) > 3 else []
+                else:
+                    otps_extracted = clean_p.split(",")
+
+                if otps_extracted:
+                    existing_otps = {o.slot_number: o for o in db.query(DeviceOfflineOTP).filter(DeviceOfflineOTP.device_id == device.id).all()}
+                    max_slots = len(otps_extracted) if len(otps_extracted) > 100 else 100
+                    for idx in range(1, max_slots + 1):
+                        val = otps_extracted[idx - 1] if (idx - 1) < len(otps_extracted) else ""
+                        if idx in existing_otps:
+                            existing_otps[idx].otp_code = str(val).strip()
+                            existing_otps[idx].status = "active"
+                        else:
+                            new_o = DeviceOfflineOTP(device_id=device.id, slot_number=idx, otp_code=str(val).strip(), status="active")
+                            db.add(new_o)
+
+                    status_ack_msg = ThreadMessage(
+                        device_id=device.id,
+                        sender_id=device.owner_id or 1,
+                        content=f"Offline OTP Pool sync updated for {device.name} via {msg.topic}",
+                        message_type="otp_status",
+                        payload={
+                            "topic": msg.topic,
+                            "raw_payload": payload_str,
+                            "data": data,
+                            "status": "Processed",
+                            "slots_updated": len(otps_extracted),
+                            "device_name": device.name,
+                            "device_id": device.id,
+                        },
+                    )
+                    db.add(status_ack_msg)
+                    db.commit()
+                    logger.info("Updated bulk offline OTPs for device %s (id: %d) from MQTT topic %s", device.name, device.id, msg.topic)
                 return
 
-            # Default: Topic format: /OTP/REQUEST/DEVICENAME
+            # Default/Request: Topic format: /OTP/REQUEST/{device_ident} or /OTP/{device_ident}
             device_name = parts[-1] if len(parts) > 1 else None
 
             device = None
-            if device_name:
+            if device_name and device_name.isdigit():
+                device = db.query(Device).filter(Device.id == int(device_name)).first()
+            if not device and device_name:
                 device = db.query(Device).filter(Device.name == device_name).first()
             if not device:
                 device = db.query(Device).first()
@@ -101,11 +166,12 @@ def on_message(client, userdata, msg):
                         "data": data,
                         "status": "Pending",
                         "device_name": device.name,
+                        "device_id": device.id,
                     },
                 )
                 db.add(ack_msg)
                 db.commit()
-                logger.info("OTP request saved for device %s", device.name)
+                logger.info("OTP request saved for device %s (id: %d)", device.name, device.id)
             else:
                 logger.warning("No device found for MQTT topic %s", msg.topic)
         finally:
@@ -164,17 +230,40 @@ def stop_mqtt_client():
         logger.info("MQTT client disconnected")
 
 
-def publish_otp_to_device(device_name: str, otp1: str, otp2: str = "") -> bool:
+def _get_device_name_topic(device_identifier: str) -> str:
+    clean_ident = (str(device_identifier) or "").strip().lstrip("/")
+    if clean_ident.startswith("OTP/"):
+        clean_ident = clean_ident[4:]
+    
+    device_name = clean_ident
+
+    db = SessionLocal()
+    try:
+        device = None
+        if clean_ident.isdigit():
+            device = db.query(Device).filter(Device.id == int(clean_ident)).first()
+        if not device and clean_ident:
+            device = db.query(Device).filter(Device.name == clean_ident).first()
+
+        if device and device.name:
+            device_name = device.name
+    except Exception as e:
+        logger.warning("Error querying device for MQTT topic: %s", e)
+    finally:
+        db.close()
+
+    return f"/OTP/{device_name}"
+
+
+def publish_otp_to_device(device_identifier: str, otp1: str, otp2: str = "") -> bool:
     global mqtt_client
     if not mqtt_client:
         logger.error("MQTT client not initialized")
         return False
 
-    clean_device_name = (device_name or "").strip().lstrip("/")
-    topic = f"/OTP/{clean_device_name}" if not clean_device_name.startswith("OTP/") else f"/{clean_device_name}"
-
     val2 = otp2 if otp2 else otp1
     payload = f"*OTP, ,{otp1},{val2}#"
+    topic = _get_device_name_topic(device_identifier)
 
     try:
         info = mqtt_client.publish(topic, payload, qos=1)
@@ -192,12 +281,10 @@ def publish_bulk_otp_to_device(device_identifier: str, otp_list: list) -> bool:
         logger.error("MQTT client not initialized")
         return False
 
-    clean_id = (str(device_identifier) or "").strip().lstrip("/")
-    topic = f"/OTP/{clean_id}" if not clean_id.startswith("OTP/") else f"/{clean_id}"
-
     # Ensure exactly 100 entries, formatted as string
     otps_padded = [(str(otp_list[i]) if i < len(otp_list) else "") for i in range(100)]
     payload = f"*OFFOTP,BULK,1,{','.join(otps_padded)}#"
+    topic = _get_device_name_topic(device_identifier)
 
     try:
         info = mqtt_client.publish(topic, payload, qos=1)
@@ -207,4 +294,6 @@ def publish_bulk_otp_to_device(device_identifier: str, otp_list: list) -> bool:
     except Exception as e:
         logger.error("Failed to publish bulk OTP MQTT message to %s: %s", topic, e)
         return False
+
+
 
