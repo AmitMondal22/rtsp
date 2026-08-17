@@ -490,14 +490,12 @@ def send_action(
         if u2_id:
             candidate_ids.append(u2_id)
         if device.branch:
-            for attr in ("otp1_user_id", "user1_id", "otp2_user_id", "user2_id"):
+            for attr in ("otp1_user_id", "otp2_user_id", "user1_id", "user2_id", "user3_id"):
                 v = getattr(device.branch, attr, None)
                 if v:
                     candidate_ids.append(v)
         if device.assigned_user_id:
             candidate_ids.append(device.assigned_user_id)
-        if getattr(device, "assigned_user_2_id", None):
-            candidate_ids.append(device.assigned_user_2_id)
 
         # Single bulk user query
         user_map: dict[int, User] = {}
@@ -510,31 +508,39 @@ def send_action(
             if u1_id and u1_id in user_map:
                 return user_map[u1_id]
             if device.branch:
-                for attr in ("otp1_user_id", "user1_id"):
-                    uid = getattr(device.branch, attr, None)
-                    if uid and uid in user_map:
-                        return user_map[uid]
+                if device.branch.otp1_user_id and device.branch.otp1_user_id in user_map:
+                    return user_map[device.branch.otp1_user_id]
+                if device.branch.user1_id and device.branch.user1_id in user_map:
+                    return user_map[device.branch.user1_id]
+                if device.branch.user2_id and device.branch.user2_id in user_map:
+                    return user_map[device.branch.user2_id]
+                if device.branch.user3_id and device.branch.user3_id in user_map:
+                    return user_map[device.branch.user3_id]
             if device.assigned_user_id and device.assigned_user_id in user_map:
                 return user_map[device.assigned_user_id]
             return current_user
 
         # Resolve User 2
         def _resolve_u2(u1: User) -> User:
-            if u2_id and u2_id in user_map:
+            if u2_id and u2_id in user_map and u2_id != u1.id:
                 return user_map[u2_id]
             if device.branch:
-                for attr in ("otp2_user_id", "user2_id"):
-                    uid = getattr(device.branch, attr, None)
-                    if uid and uid in user_map:
-                        return user_map[uid]
-            if getattr(device, "assigned_user_2_id", None) and device.assigned_user_2_id in user_map:
+                if device.branch.otp2_user_id and device.branch.otp2_user_id in user_map and device.branch.otp2_user_id != u1.id:
+                    return user_map[device.branch.otp2_user_id]
+                if device.branch.user2_id and device.branch.user2_id in user_map and device.branch.user2_id != u1.id:
+                    return user_map[device.branch.user2_id]
+                if device.branch.user3_id and device.branch.user3_id in user_map and device.branch.user3_id != u1.id:
+                    return user_map[device.branch.user3_id]
+                if device.branch.user1_id and device.branch.user1_id in user_map and device.branch.user1_id != u1.id:
+                    return user_map[device.branch.user1_id]
+            if getattr(device, "assigned_user_2_id", None) and device.assigned_user_2_id in user_map and device.assigned_user_2_id != u1.id:
                 return user_map[device.assigned_user_2_id]
             # Fallback: any other bank user
             bank_id = device.bank_id or current_user.bank_id
             if bank_id:
-                u2 = db.query(User).filter(User.bank_id == bank_id, User.id != u1.id).first()
-                if u2:
-                    return u2
+                u2_fallback = db.query(User).filter(User.bank_id == bank_id, User.id != u1.id).first()
+                if u2_fallback:
+                    return u2_fallback
             return u1
 
         u1 = _resolve_u1()
@@ -573,9 +579,9 @@ def send_action(
         wa2 = getattr(u2, "whatsapp_number", None) or getattr(device, "whatsapp_number_2", None)
 
         futures = {}
-        if enable_email and enable_otp1:
+        if enable_email and enable_otp1 and u1.email:
             futures["email1"] = _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Authorization OTP")
-        if enable_email and enable_otp2:
+        if enable_email and enable_otp2 and u2.email:
             futures["email2"] = _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Authorization OTP")
         if enable_wa and wa1 and enable_otp1:
             futures["wa1"] = _otp_executor.submit(send_whatsapp_otp, wa1, otp1, device.name, "1st Authorization OTP")
@@ -684,7 +690,7 @@ def send_action(
         otp2_rec.status = "sent"
         db.commit()
 
-        # Resolve User 1 & User 2 (same logic as no_threat)
+        # Resolve User 1 & User 2
         u1_id = action_data.user_id_1
         u2_id = action_data.user_id_2
 
@@ -694,7 +700,7 @@ def send_action(
         if u2_id:
             candidate_ids.append(u2_id)
         if device.branch:
-            for attr in ("otp1_user_id", "user1_id", "otp2_user_id", "user2_id"):
+            for attr in ("otp1_user_id", "otp2_user_id", "user1_id", "user2_id", "user3_id"):
                 v = getattr(device.branch, attr, None)
                 if v:
                     candidate_ids.append(v)
@@ -708,29 +714,37 @@ def send_action(
             fetched = db.query(User).filter(User.id.in_(set(candidate_ids))).all()
             user_map = {u.id: u for u in fetched}
 
-        # Resolve User 1
+        # Resolve User 1 (1st assigned OTP user)
         def _resolve_u1() -> User:
             if u1_id and u1_id in user_map:
                 return user_map[u1_id]
             if device.branch:
-                for attr in ("otp1_user_id", "user1_id"):
-                    uid = getattr(device.branch, attr, None)
-                    if uid and uid in user_map:
-                        return user_map[uid]
+                if device.branch.otp1_user_id and device.branch.otp1_user_id in user_map:
+                    return user_map[device.branch.otp1_user_id]
+                if device.branch.user1_id and device.branch.user1_id in user_map:
+                    return user_map[device.branch.user1_id]
+                if device.branch.user2_id and device.branch.user2_id in user_map:
+                    return user_map[device.branch.user2_id]
+                if device.branch.user3_id and device.branch.user3_id in user_map:
+                    return user_map[device.branch.user3_id]
             if device.assigned_user_id and device.assigned_user_id in user_map:
                 return user_map[device.assigned_user_id]
             return current_user
 
-        # Resolve User 2
+        # Resolve User 2 (2nd assigned OTP user)
         def _resolve_u2(u1: User) -> User:
-            if u2_id and u2_id in user_map:
+            if u2_id and u2_id in user_map and u2_id != u1.id:
                 return user_map[u2_id]
             if device.branch:
-                for attr in ("otp2_user_id", "user2_id"):
-                    uid = getattr(device.branch, attr, None)
-                    if uid and uid in user_map:
-                        return user_map[uid]
-            if getattr(device, "assigned_user_2_id", None) and device.assigned_user_2_id in user_map:
+                if device.branch.otp2_user_id and device.branch.otp2_user_id in user_map and device.branch.otp2_user_id != u1.id:
+                    return user_map[device.branch.otp2_user_id]
+                if device.branch.user2_id and device.branch.user2_id in user_map and device.branch.user2_id != u1.id:
+                    return user_map[device.branch.user2_id]
+                if device.branch.user3_id and device.branch.user3_id in user_map and device.branch.user3_id != u1.id:
+                    return user_map[device.branch.user3_id]
+                if device.branch.user1_id and device.branch.user1_id in user_map and device.branch.user1_id != u1.id:
+                    return user_map[device.branch.user1_id]
+            if getattr(device, "assigned_user_2_id", None) and device.assigned_user_2_id in user_map and device.assigned_user_2_id != u1.id:
                 return user_map[device.assigned_user_2_id]
             # Fallback: any other bank user
             bank_id = device.bank_id or current_user.bank_id
@@ -743,22 +757,14 @@ def send_action(
         u1 = _resolve_u1()
         u2 = _resolve_u2(u1)
 
-        # Check Branch OTP enable flags
-        enable_otp1 = getattr(device.branch, "enable_otp1", True) if device.branch else True
-        enable_otp2 = getattr(device.branch, "enable_otp2", True) if device.branch else True
-        if enable_otp1 is None:
-            enable_otp1 = True
-        if enable_otp2 is None:
-            enable_otp2 = True
-
-        # Send ONLY via Email (MQTT IS BYPASSED) — parallel delivery
-        enable_email = getattr(device, "enable_email", True) is not False
-
+        # Send ONLY via Email (MQTT IS BYPASSED)
         futures = {}
-        if enable_email and enable_otp1 and u1.email:
+        if u1.email:
             futures["email1"] = _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Offline Authorization OTP")
-        if enable_email and enable_otp2 and u2.email:
+        if u2.email and u2.id != u1.id:
             futures["email2"] = _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Offline Authorization OTP")
+        elif u1.email:
+            futures["email2"] = _otp_executor.submit(send_otp_email, u1.email, otp2, device.name, "2nd Offline Authorization OTP")
 
         def _safe_result(key):
             try:
