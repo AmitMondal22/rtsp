@@ -45,9 +45,10 @@ document.addEventListener("DOMContentLoaded", () => {
         inputsGrid.innerHTML = "";
         for (let i = 1; i <= 100; i++) {
             const wrapper = document.createElement("div");
+            wrapper.id = `otp-wrapper-${i}`;
             wrapper.className = "bg-brand-cardBg border border-brand-border rounded-lg p-1.5 focus-within:border-brand-blue transition";
             wrapper.innerHTML = `
-                <div class="flex items-center justify-between text-[9px] text-brand-muted font-bold mb-1">
+                <div id="otp-badge-${i}" class="flex items-center justify-between text-[9px] text-brand-muted font-bold mb-1">
                     <span>#${i}</span>
                 </div>
                 <input type="text" id="otp-input-${i}" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="0000"
@@ -221,11 +222,36 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 const otps = data.otps || [];
+                const statuses = data.statuses || [];
                 for (let i = 1; i <= 100; i++) {
                     const inp = qs(`#otp-input-${i}`);
+                    const wrapper = qs(`#otp-wrapper-${i}`);
+                    const badge = qs(`#otp-badge-${i}`);
+                    const status = (statuses[i - 1] || "active").toString().toLowerCase();
+
                     if (inp) {
                         const rawVal = (otps[i - 1] || "").toString();
                         inp.value = rawVal.replace(/[^0-9]/g, "").slice(0, 4);
+
+                        if (status === "sent" || status === "used") {
+                            // Highlight USED / SENT OTP in RED
+                            inp.className = "otp-digit-input w-full bg-rose-950/40 border border-rose-500/60 rounded px-1.5 py-1 text-xs text-center text-rose-400 font-mono focus:outline-none focus:border-rose-400 transition font-semibold";
+                            if (wrapper) {
+                                wrapper.className = "bg-rose-950/20 border border-rose-500/40 rounded-lg p-1.5 focus-within:border-rose-400 transition";
+                            }
+                            if (badge) {
+                                badge.innerHTML = `<span>#${i}</span><span class="text-rose-400 font-bold text-[9px] uppercase tracking-wider">USED</span>`;
+                            }
+                        } else {
+                            // Normal ACTIVE / UNUSED OTP in EMERALD
+                            inp.className = "otp-digit-input w-full bg-brand-sidebar border border-brand-border rounded px-1.5 py-1 text-xs text-center text-emerald-400 font-mono focus:outline-none focus:border-brand-blue transition font-semibold";
+                            if (wrapper) {
+                                wrapper.className = "bg-brand-cardBg border border-brand-border rounded-lg p-1.5 focus-within:border-brand-blue transition";
+                            }
+                            if (badge) {
+                                badge.innerHTML = `<span>#${i}</span>`;
+                            }
+                        }
                     }
                 }
             })
@@ -269,6 +295,32 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (inp) inp.value = "";
                 }
                 showToast("Cleared all OTP input fields", "info");
+            }
+        });
+    }
+
+    const btnResetStatus = qs("#btn-reset-status");
+    if (btnResetStatus) {
+        btnResetStatus.addEventListener("click", () => {
+            if (!currentDeviceId) {
+                showToast("Please select a device first", "error");
+                return;
+            }
+            if (confirm("Reset all sent OTP statuses to active for this device?")) {
+                fetch(`/api/otp/device/${currentDeviceId}/reset-status`, {
+                    method: "POST",
+                    headers: authHeaders
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === "success") {
+                            showToast("All sent OTP statuses reset to active", "success");
+                            loadDeviceOTPs(currentDeviceId);
+                        } else {
+                            showToast(data.detail || "Failed to reset statuses", "error");
+                        }
+                    })
+                    .catch(err => showToast("Error resetting statuses: " + err, "error"));
             }
         });
     }
@@ -318,6 +370,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                     showToast(msg, "success");
                     if (activeDeviceLastSync) activeDeviceLastSync.textContent = new Date().toLocaleString();
+                    // Refresh OTP grid so updated statuses reset to active emerald color
+                    loadDeviceOTPs(currentDeviceId);
                 } else {
                     showToast(resData.detail || "Failed to save OTPs", "error");
                 }

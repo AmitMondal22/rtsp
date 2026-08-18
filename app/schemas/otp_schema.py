@@ -11,4 +11,5 @@ class BulkOTPUpdate(BaseModel):
 class BulkOTPOut(BaseModel):
     device_id: int
     otps: List[str]
+    statuses: Optional[List[str]] = None
     updated_at: Optional[str] = None
