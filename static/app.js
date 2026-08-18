@@ -420,7 +420,9 @@ function updateSendButtonState() {
     }
 
     const deviceRequests = (state.otpRequests || []).filter(
-        req => req.device_id === state.selectedDeviceId && req.message_type === "otp_request"
+        req => req.device_id === state.selectedDeviceId &&
+               req.message_type === "otp_request" &&
+               (req.payload?.status === "Pending" || !req.payload?.status)
     );
 
     if (deviceRequests.length > 0) {
@@ -1051,6 +1053,9 @@ qs("#send-action-btn").addEventListener("click", async () => {
 
         // Show action result
         showActionResult(result);
+
+        // Immediately refresh OTP requests to clear acknowledged alert from UI
+        await loadOtpRequests();
 
         // Show toast based on mode
         if (mode === "thread") {

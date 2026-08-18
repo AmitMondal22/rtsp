@@ -155,15 +155,27 @@ def on_message(client, userdata, msg):
                 return
 
             # Default/Request: Topic format: /OTP/REQUEST/{device_ident} or /OTP/{device_ident}
-            device_name = parts[-1] if len(parts) > 1 else None
+            candidates = []
+            if len(parts) >= 2 and parts[-1].upper() not in ("REQUEST", "OTP"):
+                candidates.append(parts[-1])
+
+            if isinstance(jdata, dict):
+                for key in ["device_id", "device_name", "deviceId", "deviceName", "name", "id"]:
+                    val = jdata.get(key)
+                    if val and str(val).strip() and str(val).strip() not in candidates:
+                        candidates.append(str(val).strip())
 
             device = None
-            if device_name and device_name.isdigit():
-                device = db.query(Device).filter(Device.id == int(device_name)).first()
-            if not device and device_name:
-                device = db.query(Device).filter(Device.name == device_name).first()
-            if not device:
-                device = db.query(Device).first()
+            for ident in candidates:
+                if not ident:
+                    continue
+                device = db.query(Device).filter(Device.name == ident).first()
+                if not device and ident.isdigit():
+                    device = db.query(Device).filter(Device.id == int(ident)).first()
+                if not device:
+                    device = db.query(Device).filter(Device.name.ilike(ident)).first()
+                if device:
+                    break
 
             if device:
                 ack_msg = ThreadMessage(
@@ -184,7 +196,7 @@ def on_message(client, userdata, msg):
                 db.commit()
                 logger.info("OTP request saved for device %s (id: %d)", device.name, device.id)
             else:
-                logger.warning("No device found for MQTT topic %s", msg.topic)
+                logger.warning("No device found for MQTT topic %s (candidates: %s)", msg.topic, candidates)
         finally:
             db.close()
     except Exception as e:

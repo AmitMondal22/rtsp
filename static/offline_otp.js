@@ -247,12 +247,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (btnAutoRandom) {
         btnAutoRandom.addEventListener("click", () => {
+            const uniqueSet = new Set();
+            while (uniqueSet.size < 100) {
+                const code = String(Math.floor(1000 + Math.random() * 9000));
+                uniqueSet.add(code);
+            }
+            const codes = Array.from(uniqueSet);
             for (let i = 1; i <= 100; i++) {
                 const inp = qs(`#otp-input-${i}`);
-                const randVal = Math.floor(1000 + Math.random() * 9000).toString();
-                if (inp) inp.value = randVal;
+                if (inp) inp.value = codes[i - 1];
             }
-            showToast("Generated 100 random 4-digit codes", "info");
+            showToast("Generated 100 unique, non-duplicate 4-digit random OTPs", "info");
         });
     }
 

@@ -241,7 +241,7 @@ def get_global_otp_requests(
 ):
     """Get all incoming OTP requests for devices accessible to the current user."""
     # Build device filter based on role
-    if current_user.role == "super_admin":
+    if current_user.role in ("super_admin", "admin"):
         device_ids = [d.id for d in db.query(Device.id).all()]
     elif current_user.bank_id:
         device_ids = [
@@ -249,6 +249,7 @@ def get_global_otp_requests(
                 or_(
                     Device.bank_id == current_user.bank_id,
                     Device.assigned_user_id == current_user.id,
+                    Device.assigned_user_2_id == current_user.id,
                     Device.owner_id == current_user.id,
                 )
             ).all()
@@ -258,6 +259,7 @@ def get_global_otp_requests(
             d.id for d in db.query(Device.id).filter(
                 or_(
                     Device.assigned_user_id == current_user.id,
+                    Device.assigned_user_2_id == current_user.id,
                     Device.owner_id == current_user.id,
                 )
             ).all()
@@ -267,24 +269,52 @@ def get_global_otp_requests(
         return []
 
     now = get_ist_now()
-    five_minutes_ago = now - datetime.timedelta(minutes=5)
+    thirty_minutes_ago = now - datetime.timedelta(minutes=30)
 
-    # Single query: latest otp_request per device using a subquery
+    # 1. Fetch latest acknowledgment / sent OTP timestamps per device in the time window
+    ack_types = ["otp_request_ack", "no_threat", "offline_otp", "thread"]
+    ack_messages = (
+        db.query(ThreadMessage)
+        .filter(
+            ThreadMessage.device_id.in_(device_ids),
+            ThreadMessage.message_type.in_(ack_types),
+            ThreadMessage.created_at >= thirty_minutes_ago,
+        )
+        .all()
+    )
+    latest_ack_map = {}
+    for ack in ack_messages:
+        did = ack.device_id
+        if did not in latest_ack_map or ack.created_at > latest_ack_map[did]:
+            latest_ack_map[did] = ack.created_at
+
+    # 2. Fetch pending otp_request messages
     messages = (
         db.query(ThreadMessage)
         .filter(
             ThreadMessage.device_id.in_(device_ids),
             ThreadMessage.message_type == "otp_request",
-            ThreadMessage.created_at >= five_minutes_ago,
+            ThreadMessage.created_at >= thirty_minutes_ago,
         )
         .order_by(ThreadMessage.device_id, ThreadMessage.created_at.desc())
         .all()
     )
 
-    # Keep only the most recent per device (already sorted by device_id + desc created_at)
+    # Keep only un-acknowledged PENDING requests per device
     seen = set()
     unique_messages = []
     for msg in messages:
+        if msg.message_type != "otp_request":
+            continue
+        payload_status = str((msg.payload or {}).get("status", "Pending")).strip()
+        if payload_status != "Pending":
+            continue
+
+        # Skip if an acknowledgment or sent OTP exists for this device at or after this request
+        if msg.device_id in latest_ack_map:
+            if latest_ack_map[msg.device_id] >= msg.created_at:
+                continue
+
         if msg.device_id not in seen:
             seen.add(msg.device_id)
             unique_messages.append(msg)
@@ -441,29 +471,40 @@ def send_action(
     check_device_access(device, current_user)
 
     now = get_ist_now()
-    five_minutes_ago = now - datetime.timedelta(minutes=5)
+    thirty_minutes_ago = now - datetime.timedelta(minutes=30)
 
-    # Check for active pending hardware OTP request
-    pending_req = (
+    # Check for ALL active pending hardware OTP requests for this device
+    pending_reqs = (
         db.query(ThreadMessage)
         .filter(
             ThreadMessage.device_id == device_id,
             ThreadMessage.message_type == "otp_request",
-            ThreadMessage.created_at >= five_minutes_ago,
+            ThreadMessage.created_at >= thirty_minutes_ago,
         )
         .order_by(ThreadMessage.created_at.desc())
-        .first()
+        .all()
     )
 
-    if not pending_req and mode not in ("offline_otp", "no_thread"):
+    active_pending_reqs = []
+    for r in pending_reqs:
+        p_stat = str((r.payload or {}).get("status", "Pending")).strip()
+        if p_stat == "Pending":
+            active_pending_reqs.append(r)
+
+    if not active_pending_reqs and mode not in ("offline_otp", "no_thread"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active pending hardware OTP request found. OTP can only be sent once when a device request is pending."
+            detail="No active pending hardware OTP request found for this device. OTP can only be sent when a new pending request is present."
         )
 
-    if pending_req:
-        # Mark consumed (one-time send)
-        pending_req.message_type = "otp_request_ack"
+    if active_pending_reqs:
+        from sqlalchemy.orm.attributes import flag_modified
+        for req in active_pending_reqs:
+            req.message_type = "otp_request_ack"
+            p = dict(req.payload or {})
+            p["status"] = "Acknowledged"
+            req.payload = p
+            flag_modified(req, "payload")
         db.commit()
 
     if mode == "thread":
