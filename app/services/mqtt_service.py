@@ -99,17 +99,28 @@ def on_message(client, userdata, msg):
                     elif jdata.get("data"):
                         d_str = str(jdata["data"]).strip()
                         if "," in d_str:
-                            otps_extracted = [x.strip() for x in d_str.split(",")]
+                            otps_extracted = [x.strip() for x in d_str.split(",") if x.strip()]
                         else:
                             content_str = d_str
-                            if len(d_str) % 4 == 2:
+                            # bcdhex-v1 structure (e.g. 506 chars total: 102 chars header, 400 chars 4-digit OTPs, 4 chars trailer)
+                            if len(d_str) >= 502 and d_str.startswith("01") and d_str[2:102] == "4" * 100:
+                                content_str = d_str[102:502]
+                            elif len(d_str) == 506:
+                                content_str = d_str[102:502]
+                            elif len(d_str) > 400:
+                                if len(d_str) >= 502:
+                                    content_str = d_str[102:502]
+                                else:
+                                    content_str = d_str[:400]
+                            elif len(d_str) % 4 == 2:
                                 content_str = d_str[2:]
-                            otps_extracted = [content_str[i:i+4] for i in range(0, len(content_str), 4)]
+
+                            otps_extracted = [content_str[i:i+4] for i in range(0, len(content_str), 4) if content_str[i:i+4]]
                 elif "OFFOTP" in clean_p:
                     p_parts = clean_p.split(",")
-                    otps_extracted = p_parts[3:] if len(p_parts) > 3 else []
+                    otps_extracted = [x.strip() for x in p_parts[3:] if x.strip()]
                 else:
-                    otps_extracted = clean_p.split(",")
+                    otps_extracted = [x.strip() for x in clean_p.split(",") if x.strip()]
 
                 if otps_extracted:
                     existing_otps = {o.slot_number: o for o in db.query(DeviceOfflineOTP).filter(DeviceOfflineOTP.device_id == device.id).all()}
