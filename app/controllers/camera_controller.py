@@ -779,7 +779,7 @@ def send_action(
         new_msg = ThreadMessage(
             device_id=device.id,
             sender_id=current_user.id,
-            content=f"Offline OTP: 1st OTP ({otp1}) sent to {u1.email}, 2nd OTP ({otp2}) sent to {u2.email}. (Email only, MQTT bypassed).",
+            content=f"Offline OTP: 1st OTP ({otp1}) sent to {u1.email}, 2nd OTP ({otp2}) sent to {u2.email}.",
             message_type="offline_otp",
             payload={
                 "recipient1": u1.username,
@@ -800,7 +800,7 @@ def send_action(
         return {
             "success": True,
             "mode": "offline_otp",
-            "message": f"OFFLINE OTP: 1st OTP sent to {u1.username} ({u1.email}), 2nd OTP sent to {u2.username} ({u2.email}). Email only, MQTT bypassed.",
+            "message": f"OFFLINE OTP: 1st OTP sent to {u1.username} ({u1.email}), 2nd OTP sent to {u2.username} ({u2.email}). Email only.",
             "user1_username": u1.username,
             "user1_email": u1.email,
             "user2_username": u2.username,

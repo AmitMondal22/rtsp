@@ -1061,7 +1061,7 @@ qs("#send-action-btn").addEventListener("click", async () => {
         } else if (mode === "offline_otp") {
             const e1 = result.email_sent1 ? "📧" : "⚠️";
             const e2 = result.email_sent2 ? "📧" : "⚠️";
-            showToast(`OFFLINE OTP: ${e1} ${result.user1_username || "User 1"} & ${e2} ${result.user2_username || "User 2"} — Email only (MQTT Bypassed)!`, "success");
+            showToast(`OFFLINE OTP: ${e1} ${result.user1_username || "User 1"} & ${e2} ${result.user2_username || "User 2"} `, "success");
         } else {
             showToast("No Thread — message saved locally.", "info");
         }
