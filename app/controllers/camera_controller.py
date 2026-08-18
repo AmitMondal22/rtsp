@@ -415,6 +415,7 @@ async def validate_stream(
     check_device_access(device, current_user)
 
     pref_transport = getattr(device, "transport", None) or "tcp"
+    rtsp_url = build_rtsp_url(device)
     is_valid, transport_used = await validate_rtsp_with_fallback(
         rtsp_url,
         preferred_transport=pref_transport,
@@ -820,8 +821,7 @@ def get_last_acknowledgment(
     current_user: User = Depends(get_current_user),
 ):
     device = get_device_by_id(db, device_id)
-    if not device:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    check_device_access(device, current_user)
     
     from app.models.message import ThreadMessage
     last_msg = (
@@ -868,8 +868,7 @@ def get_otp_report(
     current_user: User = Depends(get_current_user),
 ):
     device = get_device_by_id(db, device_id)
-    if not device:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    check_device_access(device, current_user)
     
     messages = (
         db.query(ThreadMessage)
