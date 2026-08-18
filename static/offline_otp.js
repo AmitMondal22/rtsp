@@ -45,16 +45,32 @@ document.addEventListener("DOMContentLoaded", () => {
         inputsGrid.innerHTML = "";
         for (let i = 1; i <= 100; i++) {
             const wrapper = document.createElement("div");
-            wrapper.className = "bg-brand-cardBg border border-brand-border rounded-lg p-1.5 focus-within:border-brand-purple transition";
+            wrapper.className = "bg-brand-cardBg border border-brand-border rounded-lg p-1.5 focus-within:border-brand-blue transition";
             wrapper.innerHTML = `
                 <div class="flex items-center justify-between text-[9px] text-brand-muted font-bold mb-1">
                     <span>#${i}</span>
                 </div>
-                <input type="text" id="otp-input-${i}" maxlength="10" placeholder="----"
-                    class="w-full bg-brand-sidebar border border-brand-border rounded px-1.5 py-1 text-xs text-center text-emerald-400 font-mono focus:outline-none focus:border-brand-purple transition font-semibold" />
+                <input type="text" id="otp-input-${i}" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="0000"
+                    class="otp-digit-input w-full bg-brand-sidebar border border-brand-border rounded px-1.5 py-1 text-xs text-center text-emerald-400 font-mono focus:outline-none focus:border-brand-blue transition font-semibold" />
             `;
             inputsGrid.appendChild(wrapper);
         }
+
+        // Restrict input to digits only & max 4 characters
+        inputsGrid.addEventListener("input", (e) => {
+            if (e.target && e.target.classList.contains("otp-digit-input")) {
+                e.target.value = e.target.value.replace(/[^0-9]/g, "").slice(0, 4);
+            }
+        });
+
+        // Handle paste to ensure only numbers up to 4 digits are pasted
+        inputsGrid.addEventListener("paste", (e) => {
+            if (e.target && e.target.classList.contains("otp-digit-input")) {
+                setTimeout(() => {
+                    e.target.value = e.target.value.replace(/[^0-9]/g, "").slice(0, 4);
+                }, 0);
+            }
+        });
     }
 
     build100Inputs();
@@ -175,16 +191,16 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        activeDeviceName.textContent = currentDeviceName || `Device #${currentDeviceId}`;
-        activeDeviceId.textContent = currentDeviceId;
-        activeDeviceTopic.textContent = `/OTP/${currentDeviceName || currentDeviceId}`;
+        if (activeDeviceName) activeDeviceName.textContent = currentDeviceName || `Device #${currentDeviceId}`;
+        if (activeDeviceId) activeDeviceId.textContent = currentDeviceId;
+        if (activeDeviceTopic) activeDeviceTopic.textContent = `/OTP/${currentDeviceName || currentDeviceId}`;
 
         loadDeviceOTPs(currentDeviceId);
     });
 
     function hideDeviceContainer() {
-        deviceSelectedContainer.classList.add("hidden");
-        noDevicePrompt.classList.remove("hidden");
+        if (deviceSelectedContainer) deviceSelectedContainer.classList.add("hidden");
+        if (noDevicePrompt) noDevicePrompt.classList.remove("hidden");
     }
 
     // Fetch 100 OTPs for selected device
@@ -192,21 +208,24 @@ document.addEventListener("DOMContentLoaded", () => {
         fetch(`/api/otp/device/${deviceId}`, { headers: authHeaders })
             .then(res => res.json())
             .then(data => {
-                deviceSelectedContainer.classList.remove("hidden");
-                noDevicePrompt.classList.add("hidden");
+                if (deviceSelectedContainer) deviceSelectedContainer.classList.remove("hidden");
+                if (noDevicePrompt) noDevicePrompt.classList.add("hidden");
 
-                if (data.updated_at) {
-                    const dt = new Date(data.updated_at);
-                    activeDeviceLastSync.textContent = dt.toLocaleString();
-                } else {
-                    activeDeviceLastSync.textContent = "Never";
+                if (activeDeviceLastSync) {
+                    if (data.updated_at) {
+                        const dt = new Date(data.updated_at);
+                        activeDeviceLastSync.textContent = dt.toLocaleString();
+                    } else {
+                        activeDeviceLastSync.textContent = "Never";
+                    }
                 }
 
                 const otps = data.otps || [];
                 for (let i = 1; i <= 100; i++) {
                     const inp = qs(`#otp-input-${i}`);
                     if (inp) {
-                        inp.value = otps[i - 1] || "";
+                        const rawVal = (otps[i - 1] || "").toString();
+                        inp.value = rawVal.replace(/[^0-9]/g, "").slice(0, 4);
                     }
                 }
             })
@@ -216,32 +235,38 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Auto-fill helpers
-    btnAuto1001.addEventListener("click", () => {
-        for (let i = 1; i <= 100; i++) {
-            const inp = qs(`#otp-input-${i}`);
-            if (inp) inp.value = (1000 + i).toString();
-        }
-        showToast("Auto-filled inputs 1 to 100 with codes 1001-1100", "info");
-    });
-
-    btnAutoRandom.addEventListener("click", () => {
-        for (let i = 1; i <= 100; i++) {
-            const inp = qs(`#otp-input-${i}`);
-            const randVal = Math.floor(1000 + Math.random() * 9000).toString();
-            if (inp) inp.value = randVal;
-        }
-        showToast("Generated 100 random 4-digit codes", "info");
-    });
-
-    btnClearAll.addEventListener("click", () => {
-        if (confirm("Are you sure you want to clear all 100 OTP fields?")) {
+    if (btnAuto1001) {
+        btnAuto1001.addEventListener("click", () => {
             for (let i = 1; i <= 100; i++) {
                 const inp = qs(`#otp-input-${i}`);
-                if (inp) inp.value = "";
+                if (inp) inp.value = (1000 + i).toString();
             }
-            showToast("Cleared all OTP input fields", "info");
-        }
-    });
+            showToast("Auto-filled inputs 1 to 100 with codes 1001-1100", "info");
+        });
+    }
+
+    if (btnAutoRandom) {
+        btnAutoRandom.addEventListener("click", () => {
+            for (let i = 1; i <= 100; i++) {
+                const inp = qs(`#otp-input-${i}`);
+                const randVal = Math.floor(1000 + Math.random() * 9000).toString();
+                if (inp) inp.value = randVal;
+            }
+            showToast("Generated 100 random 4-digit codes", "info");
+        });
+    }
+
+    if (btnClearAll) {
+        btnClearAll.addEventListener("click", () => {
+            if (confirm("Are you sure you want to clear all 100 OTP fields?")) {
+                for (let i = 1; i <= 100; i++) {
+                    const inp = qs(`#otp-input-${i}`);
+                    if (inp) inp.value = "";
+                }
+                showToast("Cleared all OTP input fields", "info");
+            }
+        });
+    }
 
     // Save handler
     function saveOTPs(publishMqtt = false) {
@@ -263,9 +288,11 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         const targetBtn = publishMqtt ? savePublishOtpsBtn : saveOtpsBtn;
-        const origContent = targetBtn.innerHTML;
-        targetBtn.disabled = true;
-        targetBtn.innerHTML = `<i class="bi bi-arrow-repeat animate-spin mr-1"></i> Saving...`;
+        const origContent = targetBtn ? targetBtn.innerHTML : "";
+        if (targetBtn) {
+            targetBtn.disabled = true;
+            targetBtn.innerHTML = `<i class="bi bi-arrow-repeat animate-spin mr-1"></i> Saving...`;
+        }
 
         fetch(`/api/otp/device/${currentDeviceId}`, {
             method: "POST",
@@ -274,8 +301,10 @@ document.addEventListener("DOMContentLoaded", () => {
         })
             .then(res => res.json())
             .then(resData => {
-                targetBtn.disabled = false;
-                targetBtn.innerHTML = origContent;
+                if (targetBtn) {
+                    targetBtn.disabled = false;
+                    targetBtn.innerHTML = origContent;
+                }
 
                 if (resData.status === "success") {
                     let msg = `Successfully saved 100 OTPs for device.`;
@@ -283,20 +312,22 @@ document.addEventListener("DOMContentLoaded", () => {
                         msg += ` Published packet *OFFOTP,BULK,1,...# to MQTT topic /OTP/${currentDeviceName || currentDeviceId}`;
                     }
                     showToast(msg, "success");
-                    activeDeviceLastSync.textContent = new Date().toLocaleString();
+                    if (activeDeviceLastSync) activeDeviceLastSync.textContent = new Date().toLocaleString();
                 } else {
                     showToast(resData.detail || "Failed to save OTPs", "error");
                 }
             })
             .catch(err => {
-                targetBtn.disabled = false;
-                targetBtn.innerHTML = origContent;
+                if (targetBtn) {
+                    targetBtn.disabled = false;
+                    targetBtn.innerHTML = origContent;
+                }
                 showToast("Error saving OTPs: " + err, "error");
             });
     }
 
-    saveOtpsBtn.addEventListener("click", () => saveOTPs(false));
-    savePublishOtpsBtn.addEventListener("click", () => saveOTPs(true));
+    if (saveOtpsBtn) saveOtpsBtn.addEventListener("click", () => saveOTPs(false));
+    if (savePublishOtpsBtn) savePublishOtpsBtn.addEventListener("click", () => saveOTPs(true));
 
     // Toast Notification System
     function showToast(message, type = "info") {
@@ -309,10 +340,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? "bg-emerald-950/90 border-emerald-500/50 text-emerald-200"
                 : type === "error"
                 ? "bg-rose-950/90 border-rose-500/50 text-rose-200"
-                : "bg-slate-900/90 border-brand-purple/50 text-slate-200"
+                : "bg-slate-900/90 border-brand-blue/50 text-slate-200"
         }`;
 
-        const icon = type === "success" ? "bi-check-circle-fill text-emerald-400" : type === "error" ? "bi-exclamation-triangle-fill text-rose-400" : "bi-info-circle-fill text-brand-purple";
+        const icon = type === "success" ? "bi-check-circle-fill text-emerald-400" : type === "error" ? "bi-exclamation-triangle-fill text-rose-400" : "bi-info-circle-fill text-brand-blue";
 
         toast.innerHTML = `
             <i class="bi ${icon} text-base mr-2 shrink-0"></i>
