@@ -684,20 +684,23 @@ def send_action(
         }
 
     else:
-        # Offline OTP mode — select TWO random unused OTP codes from device's offline pool
+        # Offline OTP mode — select TWO random active unused OTP codes from device's offline pool (slots 1 to 100)
         # Send to User 1 and User 2 (same logic as no_threat), ONLY via Email (MQTT bypassed)
         from app.models.otp_bulk import DeviceOfflineOTP
 
-        # Query active unused offline OTP codes for this device
+        # Query active unused offline OTP codes for this device (slots 1 to 100 only)
         active_otps = (
             db.query(DeviceOfflineOTP)
             .filter(
                 DeviceOfflineOTP.device_id == device_id,
+                DeviceOfflineOTP.slot_number >= 1,
+                DeviceOfflineOTP.slot_number <= 100,
                 DeviceOfflineOTP.status == "active",
                 DeviceOfflineOTP.otp_code != "",
                 DeviceOfflineOTP.otp_code.isnot(None),
                 DeviceOfflineOTP.otp_code != "0000"
             )
+            .order_by(DeviceOfflineOTP.slot_number.asc())
             .all()
         )
         if not active_otps:
@@ -705,17 +708,20 @@ def send_action(
                 db.query(DeviceOfflineOTP)
                 .filter(
                     DeviceOfflineOTP.device_id == device_id,
+                    DeviceOfflineOTP.slot_number >= 1,
+                    DeviceOfflineOTP.slot_number <= 100,
                     DeviceOfflineOTP.status == "active",
                     DeviceOfflineOTP.otp_code != "",
                     DeviceOfflineOTP.otp_code.isnot(None)
                 )
+                .order_by(DeviceOfflineOTP.slot_number.asc())
                 .all()
             )
 
         if len(active_otps) < 2:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Not enough available offline OTPs for device '{device.name}'. Need at least 2 unused codes, found {len(active_otps)}. Please sync or configure offline OTP pool."
+                detail=f"Not enough available offline OTPs for device '{device.name}'. All 100 offline OTPs have been used or are empty. Need at least 2 active unused codes in slots 1 to 100 (found {len(active_otps)}). Please generate new OTPs or reset statuses in Manage OTP."
             )
 
         # Pick 2 different random OTPs from pool
@@ -727,7 +733,7 @@ def send_action(
         slot1 = otp1_rec.slot_number
         slot2 = otp2_rec.slot_number
 
-        # Mark both OTPs as sent/used in database
+        # Mark both OTPs as sent/used in database so they are never sent again
         otp1_rec.status = "sent"
         otp2_rec.status = "sent"
         db.commit()

@@ -60,10 +60,8 @@ def save_device_offline_otps(
     for i in range(1, 101):
         code_val = str(otps[i - 1]).strip()
         if i in existing:
-            # Only reset status to active if the OTP code has changed; preserve sent status if unchanged
-            if existing[i].otp_code != code_val:
-                existing[i].otp_code = code_val
-                existing[i].status = "active"
+            existing[i].otp_code = code_val
+            existing[i].status = "active"
         else:
             new_rec = DeviceOfflineOTP(device_id=device_id, slot_number=i, otp_code=code_val, status="active")
             db.add(new_rec)
