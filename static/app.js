@@ -436,7 +436,7 @@ function createRequestCardHtml(req) {
     const isPending = status === 'Pending';
 
     return `
-        <div class="bg-slate-50 border ${isPending ? 'border-amber-300 ring-1 ring-amber-100 hover:border-sky-500' : 'border-slate-200 hover:border-slate-300'} rounded-xl p-4 transition space-y-3">
+        <div class="bg-slate-50 border ${isPending ? 'border-amber-300 ring-1 ring-amber-100 hover:border-sky-500 hover:shadow-md cursor-pointer' : 'border-slate-200 hover:border-slate-300'} rounded-xl p-4 transition space-y-3" ${isPending ? `onclick="window.location.href='/devices?device=' + encodeURIComponent('${req.device_id}')"` : ''}>
             <div class="flex items-center justify-between">
                 <div class="flex items-center space-x-2">
                     <span class="text-xs text-slate-900 font-bold flex items-center">
@@ -450,9 +450,9 @@ function createRequestCardHtml(req) {
                         ${escapeHtml(status)}
                     </span>
                     ${isPending ? `
-                        <button onclick="event.stopPropagation(); window.fastProcessRequest(${req.id}, this)" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center transition cursor-pointer">
-                            <i class="bi bi-lightning-charge-fill mr-1 text-amber-300"></i> Fast Process
-                        </button>
+                        <a href="/devices?device=${encodeURIComponent(req.device_id)}" onclick="event.stopPropagation();" class="px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center transition cursor-pointer">
+                            <i class="bi bi-box-arrow-up-right mr-1"></i> Open Device
+                        </a>
                     ` : ''}
                 </div>
             </div>
@@ -969,46 +969,66 @@ function updateSendButtonState() {
     if (btn.classList.contains("sending")) return;
 
     const modeEl = document.getElementById("mode-dropdown");
-    const currentMode = modeEl ? modeEl.value : "";
+    const currentMode = modeEl ? modeEl.value : "no_threat";
     const hint = qs(".mode-action-hint");
 
     if (!state.selectedDeviceId) {
         btn.disabled = true;
+        btn.className = "flex-1 py-2 bg-slate-200 text-slate-400 rounded text-xs font-semibold shadow-xs cursor-not-allowed";
+        btn.innerHTML = '<i class="bi bi-send mr-1.5"></i> Send Action';
         if (hint) {
-            hint.innerHTML = `<i class="bi bi-info-circle mr-1"></i> Select a camera device`;
+            hint.innerHTML = `<i class="bi bi-info-circle mr-1"></i> Select a camera device first`;
             hint.className = "mode-action-hint text-slate-400 text-[10px]";
         }
         renderDeviceOtpRequestList(null);
         return;
     }
 
-    // OFFLINE OTP mode: always enabled regardless of pending device request
+    // OFFLINE OTP mode: always enabled anytime regardless of pending device request
     if (currentMode === "offline_otp") {
         btn.disabled = false;
+        btn.className = "flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-semibold shadow-xs transition cursor-pointer";
+        btn.innerHTML = '<i class="bi bi-key-fill mr-1.5"></i> Send Offline OTP (Anytime)';
         if (hint) {
-            hint.innerHTML = `<i class="bi bi-key text-purple-600 mr-1"></i> Offline OTP Ready`;
+            hint.innerHTML = `<i class="bi bi-check-circle-fill text-purple-600 mr-1"></i> Offline OTP Ready — Send anytime via Email`;
             hint.className = "mode-action-hint text-purple-600 text-[10px]";
         }
         renderDeviceOtpRequestList(state.selectedDeviceId);
         return;
     }
 
+    // THREAT mode: always enabled when device selected — operator flags threat, access denied, NO OTP sent
+    if (currentMode === "threat" || currentMode === "thread") {
+        btn.disabled = false;
+        btn.className = "flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold shadow-xs transition cursor-pointer";
+        btn.innerHTML = '<i class="bi bi-shield-slash-fill mr-1.5"></i> Deny Access (Threat — No OTP)';
+        if (hint) {
+            hint.innerHTML = `<i class="bi bi-shield-x text-rose-600 mr-1 font-bold"></i> THREAT: Access will be denied & NO OTP will be sent`;
+            hint.className = "mode-action-hint text-rose-600 text-[10px] font-semibold";
+        }
+        renderDeviceOtpRequestList(state.selectedDeviceId);
+        return;
+    }
+
+    // NO THREAT mode: sends Dual OTP and acknowledges incoming requests
     const deviceRequests = (state.otpRequests || []).filter(
         req => req.device_id === state.selectedDeviceId &&
                req.status === "Pending"
     );
 
+    btn.disabled = false;
+    btn.className = "flex-1 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded text-xs font-semibold shadow-xs transition cursor-pointer";
+    btn.innerHTML = '<i class="bi bi-send-check-fill mr-1.5"></i> Send Dual OTP (No Threat)';
+
     if (deviceRequests.length > 0) {
-        btn.disabled = false;
         if (hint) {
-            hint.innerHTML = `<i class="bi bi-check-circle text-emerald-600 mr-1"></i> ${deviceRequests.length} Active Request(s) — Ready to Send`;
+            hint.innerHTML = `<i class="bi bi-check-circle-fill text-emerald-600 mr-1 font-bold"></i> ${deviceRequests.length} Active Request(s) — Ready to Dispatch Dual OTP & Acknowledge`;
             hint.className = "mode-action-hint text-emerald-600 text-[10px]";
         }
     } else {
-        btn.disabled = true;
         if (hint) {
-            hint.innerHTML = `<i class="bi bi-exclamation-circle text-amber-600 mr-1"></i> Waiting for Device OTP Request`;
-            hint.className = "mode-action-hint text-amber-600 text-[10px]";
+            hint.innerHTML = `<i class="bi bi-info-circle text-sky-600 mr-1"></i> Direct Authorization — Ready to Dispatch Dual OTP`;
+            hint.className = "mode-action-hint text-sky-600 text-[10px]";
         }
     }
 
@@ -1024,11 +1044,11 @@ function renderDeviceOtpRequestList(deviceId) {
 
     if (!deviceId) {
         if (allPending.length === 0) {
-            container.innerHTML = `<div class="text-center py-3 text-slate-400 text-[11px]"><i class="bi bi-info-circle mr-1"></i>Select a device to see its pending OTP requests.</div>`;
+            container.innerHTML = `<div class="text-center py-3 text-slate-400 text-[11px]"><i class="bi bi-info-circle mr-1"></i>Select a device from the left to view its pending requests.</div>`;
         } else {
             container.innerHTML = `
                 <div class="text-[10px] text-amber-700 font-semibold mb-1.5 flex items-center justify-between">
-                    <span><i class="bi bi-bell-fill text-amber-500 mr-1"></i>${allPending.length} Active Pending Request(s):</span>
+                    <span><i class="bi bi-bell-fill text-amber-500 mr-1"></i>${allPending.length} Active Pending Request(s) across devices:</span>
                 </div>
                 <div class="space-y-1.5">
                     ${allPending.map(req => {
@@ -1046,9 +1066,7 @@ function renderDeviceOtpRequestList(deviceId) {
                                 </div>
                                 <div class="text-[10px] text-slate-500 flex items-center justify-between mt-1">
                                     <span><i class="bi bi-clock mr-1 text-slate-400"></i>${timeStr}</span>
-                                    <button onclick="event.stopPropagation(); window.fastProcessRequest(${req.id}, this)" class="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold flex items-center shadow-xs">
-                                        <i class="bi bi-lightning-charge-fill mr-0.5 text-amber-300"></i> Fast Process
-                                    </button>
+                                    <span class="text-[10px] text-sky-600 font-semibold flex items-center"><i class="bi bi-arrow-right mr-0.5"></i> Select Device</span>
                                 </div>
                             </div>
                         `;
@@ -1062,33 +1080,49 @@ function renderDeviceOtpRequestList(deviceId) {
     const requests = allPending.filter(r => r.device_id === deviceId);
 
     if (requests.length === 0) {
-        container.innerHTML = `<div class="text-center py-3 text-slate-400 text-[11px]"><i class="bi bi-check-circle text-emerald-500 mr-1"></i>No pending OTP requests for this device.</div>`;
+        container.innerHTML = `
+            <div class="bg-white/80 border border-slate-200 rounded-lg p-3 text-center text-slate-500 text-xs flex flex-col items-center justify-center space-y-1">
+                <i class="bi bi-shield-check text-emerald-500 text-base"></i>
+                <span class="font-medium">No pending incoming OTP requests for this device.</span>
+                <span class="text-[10px] text-slate-400">You can still send Offline OTP anytime or issue direct authorization below.</span>
+            </div>
+        `;
         return;
     }
 
-    container.innerHTML = requests.map(req => {
-        const timeStr = formatTime(req.created_at);
-        const devName = req.device_name || `Device #${req.device_id}`;
-        return `
-            <div class="bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-1.5">
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] font-bold text-slate-900 flex items-center">
-                        <i class="bi bi-shield-lock text-amber-600 mr-1.5"></i>${escapeHtml(devName)}
-                    </span>
-                    <span class="text-[10px] text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center">
-                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 animate-pulse"></span>Pending
-                    </span>
-                </div>
-                <div class="text-[10px] text-slate-500 flex items-center justify-between">
-                    <span class="flex items-center"><i class="bi bi-broadcast mr-1 text-slate-400"></i>${escapeHtml(req.payload?.topic || `/OTP/REQUEST/${devName}`)}</span>
-                    <span class="flex items-center"><i class="bi bi-clock mr-1 text-slate-400"></i>${timeStr}</span>
-                </div>
-                <button onclick="event.stopPropagation(); window.fastProcessRequest(${req.id}, this)" class="w-full mt-1 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold flex items-center justify-center transition cursor-pointer">
-                    <i class="bi bi-lightning-charge-fill mr-1 text-amber-300"></i> Fast Process
-                </button>
-            </div>
-        `;
-    }).join("");
+    container.innerHTML = `
+        <div class="space-y-2">
+            ${requests.map(req => {
+                const timeStr = formatTime(req.created_at);
+                const devName = req.device_name || `Device #${req.device_id}`;
+                const u1 = req.recipient1 || req.payload?.recipient1 || "1st User";
+                const u2 = req.recipient2 || req.payload?.recipient2 || "2nd User";
+                return `
+                    <div class="bg-amber-50/90 border border-amber-300 rounded-lg p-3 space-y-2 shadow-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-slate-900 flex items-center">
+                                <i class="bi bi-broadcast-pin text-amber-600 mr-1.5"></i>
+                                Incoming Access Request #${req.id}
+                            </span>
+                            <span class="text-[10px] text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center">
+                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 animate-pulse"></span>PENDING OPERATOR ACTION
+                            </span>
+                        </div>
+                        <div class="text-[11px] text-slate-600 grid grid-cols-2 gap-1 bg-white/70 p-2 rounded border border-amber-200/60">
+                            <div><span class="text-slate-400">Target:</span> <strong class="text-slate-800">${escapeHtml(devName)}</strong></div>
+                            <div><span class="text-slate-400">Time:</span> <strong class="text-slate-800">${timeStr}</strong></div>
+                            <div><span class="text-slate-400">1st User:</span> ${escapeHtml(u1)}</div>
+                            <div><span class="text-slate-400">2nd User:</span> ${escapeHtml(u2)}</div>
+                        </div>
+                        <div class="text-[10px] text-amber-800 flex items-center">
+                            <i class="bi bi-info-circle-fill mr-1 text-amber-600"></i>
+                            Select <strong>NO THREAT</strong> below to dispatch Dual OTP, or <strong>THREAT</strong> to deny access without OTP.
+                        </div>
+                    </div>
+                `;
+            }).join("")}
+        </div>
+    `;
 }
 window.renderDeviceOtpRequestList = renderDeviceOtpRequestList;
 
@@ -1575,6 +1609,16 @@ async function loadDevices() {
 
         // Also load OTP requests so the device view shows current pending requests
         await loadOtpRequests();
+
+        // Auto-select device if specified in query param ?device=ID or previously selected
+        const urlParams = new URLSearchParams(window.location.search);
+        const selId = urlParams.get('device') || urlParams.get('select') || state.selectedDeviceId;
+        if (selId) {
+            const devIdInt = parseInt(selId);
+            if (devIdInt) {
+                selectDevice(devIdInt);
+            }
+        }
 
     } catch (err) {
         console.error("Failed to load devices:", err);
@@ -2083,14 +2127,8 @@ qs("#send-action-btn")?.addEventListener("click", async () => {
         return;
     }
 
-    // For OFFLINE OTP, force-enable regardless of disabled state from polling race
     const _modeEl = document.getElementById("mode-dropdown");
-    const _mode = _modeEl ? _modeEl.value : "";
-    if (_mode === "offline_otp") {
-        qs("#send-action-btn").disabled = false;
-    }
-
-    const mode = qs("#mode-dropdown").value;
+    const mode = (_modeEl ? _modeEl.value : "no_threat").toLowerCase();
     const btn = qs("#send-action-btn");
     const statusIndicator = qs("#mode-status-indicator");
 
@@ -2098,8 +2136,11 @@ qs("#send-action-btn")?.addEventListener("click", async () => {
 
     // Update UI to sending state
     btn.classList.add("sending");
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm mr-1" role="status" aria-hidden="true"></span> Sending...';
-    statusIndicator.innerHTML = '<i class="bi bi-circle-fill text-warning mr-1" style="font-size:8px;animation:livePulse 1s infinite;"></i><span class="text-warning small">Processing...</span>';
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm mr-1" role="status" aria-hidden="true"></span> Processing...';
+    if (statusIndicator) {
+        statusIndicator.innerHTML = '<i class="bi bi-circle-fill text-amber-500 mr-1" style="font-size:8px;animation:livePulse 1s infinite;"></i><span class="text-amber-600 text-xs">Processing...</span>';
+    }
 
     try {
         const result = await api(`/api/camera/${state.selectedDeviceId}/send-action`, {
@@ -2113,37 +2154,54 @@ qs("#send-action-btn")?.addEventListener("click", async () => {
         // Immediately refresh OTP requests to clear acknowledged alert from UI
         await loadOtpRequests();
 
-        // Show toast based on mode
-        if (mode === "thread") {
-            const emailStatus = result.email_sent ? "Email dispatched!" : "Email not configured";
-            showToast(`Thread: OTP generated. ${emailStatus}`, result.email_sent ? "success" : "info");
+        // Update Last Ack card in device console
+        const lastAckTime = qs("#last-ack-time");
+        const lastAckContent = qs("#last-ack-content");
+        const nowStr = new Date().toLocaleTimeString();
+        if (lastAckTime) lastAckTime.textContent = nowStr;
+
+        // Show toast and feedback based on mode
+        if (mode === "threat" || mode === "thread") {
+            showToast("THREAT DETECTED: Access denied. No OTP sent.", "danger");
+            if (lastAckContent) {
+                lastAckContent.innerHTML = `<span class="text-rose-600 font-bold"><i class="bi bi-shield-slash-fill mr-1"></i> Threat Detected (Access Denied / No OTP)</span>`;
+            }
         } else if (mode === "no_threat") {
-            showToast(`NO THREAT: Dual OTP generated for ${result.user1_username || "User 1"} & ${result.user2_username || "User 2"}!`, "success");
+            showToast(`NO THREAT: Dual OTP dispatched to ${result.user1_username || "User 1"} & ${result.user2_username || "User 2"}!`, "success");
+            if (lastAckContent) {
+                lastAckContent.innerHTML = `<span class="text-emerald-600 font-bold"><i class="bi bi-check-circle-fill mr-1"></i> Dual OTP Dispatched & Acknowledged</span>`;
+            }
         } else if (mode === "offline_otp") {
             showToast(`OFFLINE OTP: Dispatched to ${result.user1_username || "User 1"} & ${result.user2_username || "User 2"} via Email`, "success");
+            if (lastAckContent) {
+                lastAckContent.innerHTML = `<span class="text-purple-600 font-bold"><i class="bi bi-key-fill mr-1"></i> Offline OTP Dispatched</span>`;
+            }
         } else {
-            showToast("No Thread — message saved locally.", "info");
+            showToast("Action processed successfully.", "info");
         }
 
-        // Update status indicator
-        statusIndicator.innerHTML = '<i class="bi bi-check-circle-fill text-success mr-1" style="font-size:10px;"></i><span class="text-success small">Sent!</span>';
+        if (statusIndicator) {
+            statusIndicator.innerHTML = '<i class="bi bi-check-circle-fill text-emerald-600 mr-1" style="font-size:10px;"></i><span class="text-emerald-600 text-xs">Complete</span>';
+        }
 
     } catch (err) {
         showToast(err.message || "Failed to send action request", "error");
-        statusIndicator.innerHTML = '<i class="bi bi-x-circle-fill text-danger mr-1" style="font-size:10px;"></i><span class="text-danger small">Failed</span>';
+        if (statusIndicator) {
+            statusIndicator.innerHTML = '<i class="bi bi-x-circle-fill text-rose-600 mr-1" style="font-size:10px;"></i><span class="text-rose-600 text-xs">Failed</span>';
+        }
     } finally {
         btn.classList.remove("sending");
         btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-send mr-1"></i> Send';
         updateSendButtonState();
 
-        // Refresh OTP requests list in sidebar
+        // Refresh OTP requests list
         loadOtpRequests();
 
-        // Reset status after 5 seconds
-        setTimeout(() => {
-            statusIndicator.innerHTML = '<i class="bi bi-circle-fill text-muted mr-1" style="font-size:8px;"></i><span class="text-muted small">Ready</span>';
-        }, 5000);
+        if (statusIndicator) {
+            setTimeout(() => {
+                statusIndicator.innerHTML = '<i class="bi bi-circle-fill text-slate-400 mr-1" style="font-size:8px;"></i><span class="text-slate-400 text-xs">Ready</span>';
+            }, 5000);
+        }
     }
 });
 
@@ -2158,57 +2216,71 @@ function showActionResult(result) {
 
     const m = (result.mode || "").toLowerCase();
 
-    if (m === "thread") {
-        title.innerHTML = '<i class="bi bi-lock mr-2 text-warning"></i> Thread — Authorized';
+    if (m === "threat" || m === "thread" || result.threat_detected || result.otp_sent === false) {
+        panel.className = "bg-rose-50 border border-rose-300 rounded-lg p-3 text-xs space-y-2 mt-2";
+        title.innerHTML = '<i class="bi bi-shield-slash-fill mr-1.5 text-rose-600"></i> <span class="text-rose-900 font-bold">SECURITY THREAT — Access Denied</span>';
         body.innerHTML = `
             <div class="space-y-2">
-                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
-                    <div class="text-[11px] text-slate-200 font-medium">${escapeHtml(result.message || 'Authorization OTP Sent')}</div>
-                    <div class="text-[10px] text-brand-muted mt-1 flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email Delivery: ${result.email_sent ? '<span class="text-emerald-400 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-1 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">Disabled/Skipped</span>'}</div>
+                <div class="bg-white border border-rose-200 rounded p-2.5 text-rose-900 shadow-xs">
+                    <div class="text-xs font-bold flex items-center text-rose-700">
+                        <i class="bi bi-shield-x mr-1.5 text-base text-rose-600"></i>
+                        No OTP Sent — Access Request Denied
+                    </div>
+                    <div class="text-[11px] text-slate-600 mt-1">
+                        ${escapeHtml(result.message || 'Security threat detected. Hardware unlock OTP dispatch blocked. Request acknowledged as threat and logged.')}
+                    </div>
+                </div>
+                <div class="text-[10px] text-rose-700 font-mono text-center pt-0.5 flex items-center justify-center font-semibold">
+                    <i class="bi bi-exclamation-octagon-fill mr-1 text-rose-600"></i> Critical Security Threat Alert Recorded
                 </div>
             </div>
         `;
-    } else if (m === "no_threat") {
-        title.innerHTML = '<i class="bi bi-shield-check mr-2 text-emerald-400"></i> NO THREAT — Dispatched';
+        return;
+    }
+
+    panel.className = "bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-2 mt-2";
+
+    if (m === "no_threat") {
+        title.innerHTML = '<i class="bi bi-shield-check mr-2 text-emerald-600"></i> <span class="text-slate-800 font-bold">NO THREAT — Dual OTP Dispatched</span>';
         body.innerHTML = `
             <div class="space-y-2">
-                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
-                    <div class="text-[10px] text-brand-muted uppercase font-bold mb-1">1st User (${escapeHtml(result.user1_username || "User 1")})</div>
-                    <div class="text-[10px] text-brand-muted truncate flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email: ${escapeHtml(result.user1_email || "N/A")} ${result.email_sent1 ? '<span class="text-emerald-400 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-0.5 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">(No email)</span>'}</div>
+                <div class="bg-white border border-slate-200 rounded p-2.5">
+                    <div class="text-[10px] text-slate-500 uppercase font-bold mb-1">1st User (${escapeHtml(result.user1_username || "User 1")})</div>
+                    <div class="text-[10px] text-slate-600 truncate flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email: ${escapeHtml(result.user1_email || "N/A")} ${result.email_sent1 ? '<span class="text-emerald-600 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-0.5 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">(No email)</span>'}</div>
                 </div>
-                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
-                    <div class="text-[10px] text-brand-muted uppercase font-bold mb-1">2nd User (${escapeHtml(result.user2_username || "User 2")})</div>
-                    <div class="text-[10px] text-brand-muted truncate flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email: ${escapeHtml(result.user2_email || "N/A")} ${result.email_sent2 ? '<span class="text-emerald-400 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-0.5 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">(No email)</span>'}</div>
+                <div class="bg-white border border-slate-200 rounded p-2.5">
+                    <div class="text-[10px] text-slate-500 uppercase font-bold mb-1">2nd User (${escapeHtml(result.user2_username || "User 2")})</div>
+                    <div class="text-[10px] text-slate-600 truncate flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email: ${escapeHtml(result.user2_email || "N/A")} ${result.email_sent2 ? '<span class="text-emerald-600 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-0.5 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">(No email)</span>'}</div>
                 </div>
-                <div class="text-[10px] text-emerald-400 font-mono text-center pt-1 flex items-center justify-center">
+                <div class="text-[10px] text-emerald-600 font-mono text-center pt-1 flex items-center justify-center font-semibold">
                     <i class="bi bi-broadcast mr-1"></i> Published to MQTT: ${result.mqtt_sent ? "Success" : "Offline"}
                 </div>
             </div>
         `;
     } else if (m === "offline_otp") {
-        title.innerHTML = '<i class="bi bi-key mr-2 text-purple-400"></i> OFFLINE OTP — Dispatched';
+        title.innerHTML = '<i class="bi bi-key mr-2 text-purple-600"></i> <span class="text-slate-800 font-bold">OFFLINE OTP — Dispatched</span>';
         body.innerHTML = `
             <div class="space-y-2">
-                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
-                    <div class="text-[10px] text-brand-muted uppercase font-bold mb-1">1st User (${escapeHtml(result.user1_username || "User 1")})</div>
-                    <div class="text-[10px] text-brand-muted truncate flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email: ${escapeHtml(result.user1_email || "N/A")} ${result.email_sent1 ? '<span class="text-emerald-400 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-0.5 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">(Skipped)</span>'}</div>
-                    ${result.slot1 ? `<div class="text-[10px] text-purple-300 mt-1">Pool Slot: #${result.slot1}</div>` : ''}
+                <div class="bg-white border border-slate-200 rounded p-2.5">
+                    <div class="text-[10px] text-slate-500 uppercase font-bold mb-1">1st User (${escapeHtml(result.user1_username || "User 1")})</div>
+                    <div class="text-[10px] text-slate-600 truncate flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email: ${escapeHtml(result.user1_email || "N/A")} ${result.email_sent1 ? '<span class="text-emerald-600 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-0.5 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">(Skipped)</span>'}</div>
+                    ${result.slot1 ? `<div class="text-[10px] text-purple-600 mt-1">Pool Slot: #${result.slot1}</div>` : ''}
                 </div>
-                <div class="bg-brand-sidebar border border-brand-border rounded p-2.5">
-                    <div class="text-[10px] text-brand-muted uppercase font-bold mb-1">2nd User (${escapeHtml(result.user2_username || "User 2")})</div>
-                    <div class="text-[10px] text-brand-muted truncate flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email: ${escapeHtml(result.user2_email || "N/A")} ${result.email_sent2 ? '<span class="text-emerald-400 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-0.5 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">(Skipped)</span>'}</div>
-                    ${result.slot2 ? `<div class="text-[10px] text-purple-300 mt-1">Pool Slot: #${result.slot2}</div>` : ''}
+                <div class="bg-white border border-slate-200 rounded p-2.5">
+                    <div class="text-[10px] text-slate-500 uppercase font-bold mb-1">2nd User (${escapeHtml(result.user2_username || "User 2")})</div>
+                    <div class="text-[10px] text-slate-600 truncate flex items-center"><i class="bi bi-envelope mr-1 text-slate-400"></i>Email: ${escapeHtml(result.user2_email || "N/A")} ${result.email_sent2 ? '<span class="text-emerald-600 font-semibold ml-1 inline-flex items-center"><i class="bi bi-check-circle-fill mr-0.5 text-[9px]"></i>Sent</span>' : '<span class="text-slate-400 ml-1">(Skipped)</span>'}</div>
+                    ${result.slot2 ? `<div class="text-[10px] text-purple-600 mt-1">Pool Slot: #${result.slot2}</div>` : ''}
                 </div>
-                <div class="text-[10px] text-amber-400 font-mono text-center pt-1 flex items-center justify-center">
+                <div class="text-[10px] text-amber-600 font-mono text-center pt-1 flex items-center justify-center font-semibold">
                     <i class="bi bi-envelope-check mr-1"></i> Email Only (MQTT Bypassed)
                 </div>
             </div>
         `;
     } else {
-        title.innerHTML = '<i class="bi bi-database mr-2 text-info"></i> No Thread — Saved';
+        title.innerHTML = '<i class="bi bi-info-circle mr-2 text-slate-600"></i> Result';
         body.innerHTML = `
-            <div class="bg-brand-sidebar border border-brand-border rounded p-2.5 text-xs text-slate-300">
-                Message saved locally.
+            <div class="bg-white border border-slate-200 rounded p-2.5 text-xs text-slate-600">
+                ${escapeHtml(result.message || 'Action executed successfully.')}
             </div>
         `;
     }

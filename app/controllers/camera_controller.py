@@ -877,56 +877,55 @@ def send_action(
     if not active_pending_reqs and mode not in ("offline_otp", "no_thread"):
         logger.info("Direct authorization issued for device %s (no pending MQTT request found)", device.name)
 
-    if mode == "thread":
-        # Generate OTP + send email
-        otp_result = generate_otp_service(db, device_id, current_user)
-        code = str(otp_result.get("code", ""))
-
-        # Device send MQTT OTP: email send or not, device MQTT always send!
-        mqtt_sent = False
-        if code:
-            mqtt_sent = publish_otp_to_device(device.name, code, code)
-
-        # Dispatch email copy to logged-in user ("same login") if configured
-        if current_user and current_user.email:
-            _otp_executor.submit(send_otp_email, current_user.email, code, device.name, "Thread Authorization OTP")
-
+    if mode in ("threat", "thread"):
+        # THREAT DETECTED: DO NOT SEND OTP! Access is DENIED.
         from sqlalchemy.orm.attributes import flag_modified
         for req in active_pending_reqs:
-            req.message_type = "otp_request_ack"
+            req.message_type = "thread"
             p = dict(req.payload or {})
-            p["status"] = "Acknowledged"
-            p["otp1"] = code
-            p["recipient1"] = current_user.username
+            p["status"] = "Threat Detected"
+            p["threat_flagged"] = True
+            p["action"] = "denied"
+            p["handled_by"] = current_user.username
             req.payload = p
             flag_modified(req, "payload")
 
         new_msg = ThreadMessage(
             device_id=device.id,
             sender_id=current_user.id,
-            content=f"Thread OTP authorized for {device.name}. OTP ({code}) sent to {current_user.email}. Published to MQTT `/OTP/{device.name}`.",
+            content=f"SECURITY THREAT DETECTED at {device.name}. Authorization DENIED by {current_user.username}. No OTP was dispatched.",
             message_type="thread",
             payload={
-                "recipient1": current_user.username,
-                "recipient1_email": current_user.email,
-                "otp1": code,
-                "status": "Acknowledged",
-                "email_sent": otp_result.get("email_sent", False),
-                "mqtt_topic": f"/OTP/{device.name}",
-                "mqtt_published": mqtt_sent,
+                "status": "Threat Detected",
+                "action": "denied",
+                "threat_flagged": True,
+                "otp_dispatched": False,
+                "handled_by": current_user.username,
             }
         )
         db.add(new_msg)
+
+        # Trigger security alert in database
+        try:
+            from app.models.alert import Alert
+            alert_rec = Alert(
+                device_id=device.id,
+                title=f"THREAT DETECTED: {device.name}",
+                description=f"Operator {current_user.username} flagged a security threat for device {device.name}. Access request denied and OTP dispatch blocked.",
+                severity="critical"
+            )
+            db.add(alert_rec)
+        except Exception as alert_err:
+            logger.warning("Could not create alert record: %s", alert_err)
+
         db.commit()
 
         return {
             "success": True,
-            "mode": "thread",
-            "message": f"Authorization OTP generated and dispatched to {current_user.email}. Published to MQTT /OTP/{device.name}.",
-            "otp1": code,
-            "user1_username": current_user.username,
-            "email_sent": otp_result.get("email_sent", False),
-            "mqtt_sent": mqtt_sent,
+            "mode": "threat",
+            "otp_sent": False,
+            "message": f"THREAT DETECTED: Access denied for {device.name}. No OTP was dispatched. Security alert recorded.",
+            "status": "Threat Detected",
         }
 
     elif mode == "no_threat":

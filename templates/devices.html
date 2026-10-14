@@ -98,67 +98,70 @@
                             <div class="absolute bottom-3 left-3 bg-black/70 px-2 py-0.5 rounded text-[10px] text-white font-mono hidden" id="camera-timestamp"></div>
                         </div>
 
-                        <!-- Actions & Modes -->
-                        <div id="device-view" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="space-y-2">
-                                <div id="view-device-location" class="text-xs text-slate-500"></div>
-                                <div id="view-device-rtsp" class="font-mono text-xs text-slate-400 truncate"></div>
-                                <div id="device-config-display" class="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs space-y-1"></div>
-                                <div class="grid grid-cols-2 gap-2 pt-2">
-                                    <button id="validate-stream-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Validate</button>
-                                    <button id="refresh-stream-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Refresh</button>
-                                    <button id="edit-device-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Edit</button>
-                                    <button id="delete-device-btn" class="py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-xs font-semibold transition">Delete</button>
-                                </div>
-                            </div>
-
-                            <div class="bg-slate-50 p-4 rounded-lg border border-slate-100 space-y-3 flex flex-col justify-between">
-                                <div>
-                                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">Action Control</span>
-                                    <select id="mode-dropdown" class="w-full bg-white border border-slate-200 rounded text-xs p-2 text-slate-800 focus:outline-none">
-                                        <option value="no_threat" selected>NO THREAT</option>
-                                        <option value="thread">THREAT</option>
-                                        <option value="offline_otp">OFFLINE OTP</option>
-                                    </select>
-                                </div>
-                                <div class="flex items-center space-x-2">
-                                    <button id="send-action-btn" class="flex-1 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded text-xs font-semibold shadow-xs transition">
-                                        <i class="bi bi-send mr-1.5"></i> Send Action
-                                    </button>
-                                    <button id="generate-report-btn" class="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-semibold transition" title="OTP Report">
-                                        <i class="bi bi-file-earmark-bar-graph"></i>
+                        <!-- Actions & Modes & Incoming Requests -->
+                        <div id="device-view" class="hidden space-y-4">
+                            <!-- Pending OTP Requests for Selected Device -->
+                            <div id="device-otp-panel" class="bg-amber-50/70 border border-amber-200 rounded-xl p-4 shadow-xs">
+                                <div class="flex items-center justify-between mb-2.5">
+                                    <h5 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                                        <i class="bi bi-inbox-fill text-amber-500 mr-2 text-sm"></i> Incoming OTP Requests for this Device
+                                    </h5>
+                                    <button onclick="if(typeof window.loadOtpRequests === 'function') window.loadOtpRequests()" class="text-[11px] text-slate-500 hover:text-sky-600 flex items-center font-semibold">
+                                        <i class="bi bi-arrow-clockwise mr-1 text-xs"></i> Refresh
                                     </button>
                                 </div>
-                                <div id="last-ack-card" class="text-[11px] text-slate-500 border-t border-slate-200/60 pt-2">
-                                    <div class="flex justify-between font-semibold text-slate-700">
-                                        <span>Last Request & Ack</span>
-                                        <span id="last-ack-time">No recent requests</span>
-                                    </div>
-                                    <div id="last-ack-content" class="mt-1">Waiting for requests...</div>
-                                </div>
-
-                                <div id="action-result" class="hidden bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-2 mt-2">
-                                    <div class="flex items-center justify-between font-bold text-slate-800">
-                                        <span id="action-result-title">Result</span>
-                                        <button id="close-result-btn" type="button" class="text-slate-400 hover:text-slate-700 text-xs"><i class="bi bi-x-lg"></i></button>
-                                    </div>
-                                    <div id="action-result-body"></div>
+                                <div id="device-otp-requests-list" class="space-y-2 max-h-48 overflow-y-auto">
+                                    <div class="text-center py-3 text-slate-400 text-xs"><i class="bi bi-info-circle mr-1"></i>No pending OTP requests for this device.</div>
                                 </div>
                             </div>
-                        </div>
 
-                        <!-- Pending OTP Requests for Selected Device -->
-                        <div id="device-otp-panel" class="bg-white border border-amber-200 rounded-lg p-3 shadow-xs">
-                            <div class="flex items-center justify-between mb-2">
-                                <h5 class="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center">
-                                    <i class="bi bi-inbox text-amber-500 mr-1.5"></i> Incoming OTP Requests
-                                </h5>
-                                <button onclick="if(typeof window.loadOtpRequests === 'function') window.loadOtpRequests()" class="text-[10px] text-slate-500 hover:text-sky-600 flex items-center">
-                                    <i class="bi bi-arrow-clockwise mr-1"></i>Refresh
-                                </button>
-                            </div>
-                            <div id="device-otp-requests-list" class="space-y-2 max-h-48 overflow-y-auto">
-                                <div class="text-center py-3 text-slate-400 text-[11px]"><i class="bi bi-info-circle mr-1"></i>Select a device to see its pending OTP requests.</div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="space-y-2">
+                                    <div id="view-device-location" class="text-xs text-slate-500"></div>
+                                    <div id="view-device-rtsp" class="font-mono text-xs text-slate-400 truncate"></div>
+                                    <div id="device-config-display" class="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs space-y-1"></div>
+                                    <div class="grid grid-cols-2 gap-2 pt-2">
+                                        <button id="validate-stream-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Validate</button>
+                                        <button id="refresh-stream-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Refresh</button>
+                                        <button id="edit-device-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Edit</button>
+                                        <button id="delete-device-btn" class="py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-xs font-semibold transition">Delete</button>
+                                    </div>
+                                </div>
+
+                                <div class="bg-slate-50 p-4 rounded-lg border border-slate-100 space-y-3 flex flex-col justify-between">
+                                    <div>
+                                        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">Action Control</span>
+                                        <select id="mode-dropdown" class="w-full bg-white border border-slate-200 rounded text-xs p-2 text-slate-800 focus:outline-none">
+                                            <option value="no_threat" selected>NO THREAT (Send Dual OTP)</option>
+                                            <option value="threat">THREAT (Deny / Do NOT Send OTP)</option>
+                                            <option value="offline_otp">OFFLINE OTP (Send Anytime via Email)</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <button id="send-action-btn" class="flex-1 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded text-xs font-semibold shadow-xs transition">
+                                            <i class="bi bi-send mr-1.5"></i> Send Action
+                                        </button>
+                                        <button id="generate-report-btn" class="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-semibold transition" title="OTP Report">
+                                            <i class="bi bi-file-earmark-bar-graph"></i>
+                                        </button>
+                                    </div>
+                                    <div class="mode-action-hint text-slate-500 text-[10px] flex items-center"></div>
+                                    <div id="last-ack-card" class="text-[11px] text-slate-500 border-t border-slate-200/60 pt-2">
+                                        <div class="flex justify-between font-semibold text-slate-700">
+                                            <span>Last Request & Ack</span>
+                                            <span id="last-ack-time">No recent requests</span>
+                                        </div>
+                                        <div id="last-ack-content" class="mt-1">Waiting for requests...</div>
+                                    </div>
+
+                                    <div id="action-result" class="hidden bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-2 mt-2">
+                                        <div class="flex items-center justify-between font-bold text-slate-800">
+                                            <span id="action-result-title">Result</span>
+                                            <button id="close-result-btn" type="button" class="text-slate-400 hover:text-slate-700 text-xs"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                        <div id="action-result-body"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
