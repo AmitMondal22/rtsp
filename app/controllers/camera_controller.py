@@ -1247,6 +1247,13 @@ def send_action(
             _otp_executor.submit(send_dual_otp_email, current_user.email, otp1, otp2, device.name, "Offline Authorization OTP (Operator Copy)")
 
         # Publish to device MQTT - email send or not, device MQTT ALWAYS send!
+        mqtt_sent = False
+        try:
+            mqtt_sent = publish_otp_to_device(device.name, otp1, otp2)
+        except Exception as me:
+            logger.warning("Could not publish offline OTP to MQTT: %s", me)
+            mqtt_sent = False
+
         # Update active pending requests with offline otp1 and otp2
         from sqlalchemy.orm.attributes import flag_modified
         for req in active_pending_reqs:

@@ -21,9 +21,21 @@ async function api(path, options = {}) {
     const res = await fetch(path, { ...options, headers });
     if (res.status === 204) return null;
 
-    const data = await res.json();
+    const contentType = res.headers.get("content-type") || "";
+    let data;
+    if (contentType.includes("application/json")) {
+        try {
+            data = await res.json();
+        } catch (e) {
+            data = null;
+        }
+    } else {
+        const text = await res.text();
+        data = { detail: text || `HTTP ${res.status} ${res.statusText}` };
+    }
+
     if (!res.ok) {
-        const msg = typeof data.detail === "string" ? data.detail : (data.detail?.[0]?.msg || "An error occurred");
+        const msg = typeof data?.detail === "string" ? data.detail : (data?.detail?.[0]?.msg || data?.message || `Request failed (${res.status})`);
         throw new Error(msg);
     }
     return data;
