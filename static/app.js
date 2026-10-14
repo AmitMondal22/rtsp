@@ -1679,10 +1679,7 @@ function renderDeviceList() {
                     <i class="bi bi-camera-video text-sky-600"></i>
                     <span class="truncate">${escapeHtml(device.name)}</span>
                 </div>
-                <div class="flex items-center space-x-1.5 shrink-0">
-                    <span class="${device.is_online !== false ? 'text-emerald-600' : 'text-rose-600'} text-[11px] font-semibold inline-flex items-center">
-                        <i class="bi bi-circle-fill mr-1 text-[7px]"></i>${device.is_online !== false ? 'Online' : 'Offline'}
-                    </span>
+                <div class="flex items-center space-x-1 shrink-0">
                     <button type="button" class="px-1.5 py-0.5 text-slate-400 hover:text-sky-600 hover:bg-slate-200/60 rounded transition text-xs" title="Edit Device" onclick="event.stopPropagation(); window.openEditDeviceModal(${device.id})">
                         <i class="bi bi-pencil-square"></i>
                     </button>
@@ -1763,10 +1760,11 @@ function showDeviceView(device) {
 
     qs("#view-device-name").textContent = `${device.name}`;
 
-    // Status
-    const online = device.is_online;
-    qs("#view-device-status").innerHTML = online ? '<i class="bi bi-circle-fill text-[8px] mr-1"></i>Online' : '<i class="bi bi-circle-fill text-[8px] mr-1"></i>Offline';
-    qs("#view-device-status").className = `status-badge ${online ? "online" : "offline"}`;
+    // Status (if element exists)
+    const statusEl = qs("#view-device-status");
+    if (statusEl) {
+        statusEl.innerHTML = "";
+    }
 
     qs("#view-device-location").textContent = ` ${device.location || "No location set"}`;
     qs("#view-device-rtsp").textContent = `${device.rtsp_url || "Auto-configured"}`;
