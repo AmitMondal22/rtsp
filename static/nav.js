@@ -268,14 +268,9 @@
         if (header.dataset.navRendered !== "true") {
             header.dataset.navRendered = "true";
             header.innerHTML = `
-                <div class="flex items-center space-x-3">
-                    <span class="text-xs text-slate-500 font-medium">Organization</span>
-                    <div class="relative">
-                        <select id="organization-select" class="appearance-none bg-slate-50 border border-slate-200 rounded-md pl-3 pr-8 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-xs">
-                            <option value="">Default Organization</option>
-                        </select>
-                        <i class="bi bi-chevron-down absolute right-2.5 top-2.5 text-[10px] text-slate-400 pointer-events-none"></i>
-                    </div>
+                <div class="flex items-center space-x-2 text-xs font-semibold text-slate-700">
+                    <i class="bi bi-shield-check text-sky-600 text-sm"></i>
+                    <span>OTP Shield Console</span>
                 </div>
 
                 <div class="flex items-center space-x-4">
