@@ -338,18 +338,40 @@
                         </div>
 
                         <!-- Player Canvas -->
-                        <div class="relative bg-slate-950 rounded-lg aspect-video flex items-center justify-center overflow-hidden mb-4 shadow-inner">
-                            <canvas id="camera-feed-canvas" class="w-full h-full object-contain" style="display: none;"></canvas>
-                            <img id="camera-feed-mjpeg" class="w-full h-full object-contain" style="display: none;" alt="Feed" />
+                        <!-- Player Canvas -->
+                        <div id="live-player-container" class="relative bg-slate-950 rounded-lg aspect-video flex items-center justify-center overflow-hidden mb-4 shadow-inner group">
+                            <!-- Zoom & Pan Video Feed Wrapper -->
+                            <div id="stream-feed-wrapper" class="w-full h-full flex items-center justify-center transition-transform duration-75 origin-center select-none" style="cursor: default;">
+                                <canvas id="camera-feed-canvas" class="w-full h-full object-contain pointer-events-none" style="display: none;"></canvas>
+                                <img id="camera-feed-mjpeg" class="w-full h-full object-contain pointer-events-none" style="display: none;" alt="Feed" />
+                            </div>
+
                             <div id="stream-status" class="text-slate-400 text-xs font-medium text-center p-4">
                                 <i class="bi bi-camera-video text-3xl text-slate-500 block mb-2 opacity-40"></i>
                                 Select a device from the left to start live surveillance stream
                             </div>
-                            <div class="camera-overlay absolute top-3 left-3 bg-black/70 px-2.5 py-1 rounded text-[11px] text-white flex items-center space-x-1.5 hidden">
+                            <div class="camera-overlay absolute top-3 left-3 bg-black/70 px-2.5 py-1 rounded text-[11px] text-white flex items-center space-x-1.5 hidden z-20">
                                 <span class="w-2 h-2 bg-rose-500 rounded-full animate-ping"></span>
                                 <span class="font-bold">LIVE STREAM</span>
                             </div>
-                            <div class="absolute bottom-3 left-3 bg-black/70 px-2 py-0.5 rounded text-[10px] text-white font-mono hidden" id="camera-timestamp"></div>
+                            <div class="absolute bottom-3 left-3 bg-black/70 px-2 py-0.5 rounded text-[10px] text-white font-mono hidden z-20" id="camera-timestamp"></div>
+
+                            <!-- Floating Live View Toolbar: Full View & Zoom In / Out -->
+                            <div class="absolute top-3 right-3 bg-black/75 backdrop-blur-xs px-2 py-1 rounded-lg text-white flex items-center space-x-1 shadow-md z-20 border border-white/10 opacity-90 hover:opacity-100 transition-opacity">
+                                <button id="stream-zoom-out-btn" type="button" class="w-7 h-7 rounded hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition cursor-pointer" title="Zoom Out (or scroll down)">
+                                    <i class="bi bi-dash-lg text-sm"></i>
+                                </button>
+                                <span id="stream-zoom-level" class="text-[11px] font-mono font-bold px-1.5 min-w-[44px] text-center select-none text-slate-300" title="Current Zoom">100%</span>
+                                <button id="stream-zoom-in-btn" type="button" class="w-7 h-7 rounded hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition cursor-pointer" title="Zoom In (or scroll up)">
+                                    <i class="bi bi-plus-lg text-sm"></i>
+                                </button>
+                                <button id="stream-zoom-reset-btn" type="button" class="px-2 h-7 rounded hover:bg-white/20 text-[11px] font-semibold text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer border-l border-white/15 ml-1" title="Reset Zoom & Center">
+                                    <i class="bi bi-arrow-counterclockwise mr-1"></i> Reset
+                                </button>
+                                <button id="stream-fullscreen-btn" type="button" class="w-7 h-7 rounded hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition cursor-pointer border-l border-white/15 ml-1" title="Full View / Fullscreen (Double-click player)">
+                                    <i id="stream-fullscreen-icon" class="bi bi-arrows-fullscreen text-xs"></i>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Actions & Modes -->

@@ -386,9 +386,245 @@ function stopAllStreams() {
     stopMjpeg();
     stopCameraTimestamp();
     currentStreamMode = null;
+    resetStreamZoom();
     setStreamStatus("Select a device from the left to start live surveillance stream", "idle");
 }
 window.stopAllStreams = stopAllStreams;
+
+// ══════════════════════════════════════════
+//  LIVE VIEW ZOOM & FULLSCREEN CONTROLS
+// ══════════════════════════════════════════
+let streamZoom = 1.0;
+let streamPanX = 0;
+let streamPanY = 0;
+let isStreamPanning = false;
+let streamPanStartX = 0;
+let streamPanStartY = 0;
+let liveViewControlsInitialized = false;
+
+function updateStreamTransform(animate = false) {
+    const wrapper = qs("#stream-feed-wrapper");
+    const container = qs("#live-player-container");
+    const zoomLevelEl = qs("#stream-zoom-level");
+    const zoomOutBtn = qs("#stream-zoom-out-btn");
+    const zoomInBtn = qs("#stream-zoom-in-btn");
+    const resetBtn = qs("#stream-zoom-reset-btn");
+
+    if (!wrapper) return;
+
+    if (streamZoom <= 1.0) {
+        streamZoom = 1.0;
+        streamPanX = 0;
+        streamPanY = 0;
+        wrapper.style.cursor = "default";
+    } else {
+        if (container) {
+            const rect = container.getBoundingClientRect();
+            const maxPanX = Math.max(0, (rect.width * (streamZoom - 1)) / 2);
+            const maxPanY = Math.max(0, (rect.height * (streamZoom - 1)) / 2);
+            streamPanX = Math.max(-maxPanX, Math.min(maxPanX, streamPanX));
+            streamPanY = Math.max(-maxPanY, Math.min(maxPanY, streamPanY));
+        }
+        wrapper.style.cursor = isStreamPanning ? "grabbing" : "grab";
+    }
+
+    if (animate) {
+        wrapper.style.transition = "transform 0.15s ease-out";
+    } else {
+        wrapper.style.transition = "none";
+    }
+
+    wrapper.style.transform = `translate(${streamPanX}px, ${streamPanY}px) scale(${streamZoom})`;
+
+    if (zoomLevelEl) {
+        zoomLevelEl.textContent = `${Math.round(streamZoom * 100)}%`;
+        if (streamZoom > 1.0) {
+            zoomLevelEl.classList.remove("text-slate-300");
+            zoomLevelEl.classList.add("text-sky-400");
+        } else {
+            zoomLevelEl.classList.remove("text-sky-400");
+            zoomLevelEl.classList.add("text-slate-300");
+        }
+    }
+
+    if (zoomOutBtn) {
+        zoomOutBtn.disabled = streamZoom <= 1.0;
+        zoomOutBtn.style.opacity = streamZoom <= 1.0 ? "0.4" : "1";
+    }
+    if (zoomInBtn) {
+        zoomInBtn.disabled = streamZoom >= 5.0;
+        zoomInBtn.style.opacity = streamZoom >= 5.0 ? "0.4" : "1";
+    }
+    if (resetBtn) {
+        resetBtn.style.opacity = (streamZoom === 1.0 && streamPanX === 0 && streamPanY === 0) ? "0.6" : "1";
+    }
+}
+
+function zoomInStream(delta = 0.25) {
+    if (streamZoom >= 5.0) return;
+    streamZoom = Math.min(5.0, Math.round((streamZoom + delta) * 100) / 100);
+    updateStreamTransform(true);
+}
+
+function zoomOutStream(delta = 0.25) {
+    if (streamZoom <= 1.0) return;
+    streamZoom = Math.max(1.0, Math.round((streamZoom - delta) * 100) / 100);
+    if (streamZoom === 1.0) {
+        streamPanX = 0;
+        streamPanY = 0;
+    }
+    updateStreamTransform(true);
+}
+
+function resetStreamZoom() {
+    streamZoom = 1.0;
+    streamPanX = 0;
+    streamPanY = 0;
+    updateStreamTransform(true);
+}
+
+function toggleStreamFullscreen() {
+    const container = qs("#live-player-container");
+    if (!container) return;
+
+    const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!isFs) {
+        if (container.requestFullscreen) {
+            container.requestFullscreen().catch(err => console.warn("Fullscreen request error:", err));
+        } else if (container.webkitRequestFullscreen) {
+            container.webkitRequestFullscreen();
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen().catch(err => console.warn("Exit fullscreen error:", err));
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
+}
+
+function updateFullscreenIcon() {
+    const icon = qs("#stream-fullscreen-icon");
+    const btn = qs("#stream-fullscreen-btn");
+    const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    if (icon) {
+        if (isFs) {
+            icon.className = "bi bi-fullscreen-exit text-xs";
+        } else {
+            icon.className = "bi bi-arrows-fullscreen text-xs";
+        }
+    }
+    if (btn) {
+        btn.title = isFs ? "Exit Full View (Esc)" : "Full View / Fullscreen (Double-click player)";
+    }
+}
+
+function initLiveViewControls() {
+    const container = qs("#live-player-container");
+    const wrapper = qs("#stream-feed-wrapper");
+    const zoomInBtn = qs("#stream-zoom-in-btn");
+    const zoomOutBtn = qs("#stream-zoom-out-btn");
+    const resetBtn = qs("#stream-zoom-reset-btn");
+    const fsBtn = qs("#stream-fullscreen-btn");
+
+    if (zoomInBtn) {
+        zoomInBtn.onclick = (e) => {
+            e.stopPropagation();
+            zoomInStream(0.25);
+        };
+    }
+    if (zoomOutBtn) {
+        zoomOutBtn.onclick = (e) => {
+            e.stopPropagation();
+            zoomOutStream(0.25);
+        };
+    }
+    if (resetBtn) {
+        resetBtn.onclick = (e) => {
+            e.stopPropagation();
+            resetStreamZoom();
+        };
+    }
+    if (fsBtn) {
+        fsBtn.onclick = (e) => {
+            e.stopPropagation();
+            toggleStreamFullscreen();
+        };
+    }
+
+    if (liveViewControlsInitialized) {
+        updateStreamTransform(false);
+        updateFullscreenIcon();
+        return;
+    }
+    liveViewControlsInitialized = true;
+
+    if (container) {
+        // Mouse wheel zoom
+        container.addEventListener("wheel", (e) => {
+            if (e.target.closest("button") || e.target.closest("select")) return;
+            e.preventDefault();
+            if (e.deltaY < 0) {
+                zoomInStream(0.2);
+            } else if (e.deltaY > 0) {
+                zoomOutStream(0.2);
+            }
+        }, { passive: false });
+
+        // Double click to toggle fullscreen
+        container.addEventListener("dblclick", (e) => {
+            if (e.target.closest("button") || e.target.closest("select") || e.target.closest("span")) return;
+            toggleStreamFullscreen();
+        });
+
+        // Mouse drag pan when zoomed in
+        container.addEventListener("mousedown", (e) => {
+            if (streamZoom <= 1.0) return;
+            if (e.button !== 0) return;
+            if (e.target.closest("button") || e.target.closest("select")) return;
+
+            isStreamPanning = true;
+            streamPanStartX = e.clientX - streamPanX;
+            streamPanStartY = e.clientY - streamPanY;
+            if (wrapper) wrapper.classList.add("panning");
+            updateStreamTransform(false);
+            e.preventDefault();
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            if (!isStreamPanning) return;
+            streamPanX = e.clientX - streamPanStartX;
+            streamPanY = e.clientY - streamPanStartY;
+            updateStreamTransform(false);
+        });
+
+        window.addEventListener("mouseup", () => {
+            if (isStreamPanning) {
+                isStreamPanning = false;
+                if (wrapper) wrapper.classList.remove("panning");
+                updateStreamTransform(false);
+            }
+        });
+    }
+
+    document.addEventListener("fullscreenchange", updateFullscreenIcon);
+    document.addEventListener("webkitfullscreenchange", updateFullscreenIcon);
+
+    updateStreamTransform(false);
+    updateFullscreenIcon();
+}
+
+window.zoomInStream = zoomInStream;
+window.zoomOutStream = zoomOutStream;
+window.resetStreamZoom = resetStreamZoom;
+window.toggleStreamFullscreen = toggleStreamFullscreen;
+window.initLiveViewControls = initLiveViewControls;
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initLiveViewControls);
+} else {
+    initLiveViewControls();
+}
 
 
 // Smart OTP request poller — pauses when OTP panel is not visible
@@ -1585,6 +1821,12 @@ async function init() {
         await loadSecurityAlerts();
     } catch (err) {
         console.error("Security alerts loading warning:", err);
+    }
+
+    try {
+        initLiveViewControls();
+    } catch (err) {
+        console.error("Live view controls init warning:", err);
     }
 }
 
