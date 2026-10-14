@@ -411,6 +411,112 @@
         };
     }
 
+    function escapeStr(s) {
+        if (!s) return "";
+        return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    // Global Delete Confirmation Modal requiring typing 'DELETE'
+    window.confirmDelete = function(options) {
+        var opts = typeof options === "string" ? { message: options } : (options || {});
+        var title = opts.title || "Delete Confirmation";
+        var itemName = opts.itemName || "";
+        var message = opts.message || "This action cannot be undone. All associated data will be permanently removed.";
+
+        return new Promise(function(resolve) {
+            var modal = document.getElementById("global-delete-modal");
+            if (!modal) {
+                modal = document.createElement("div");
+                modal.id = "global-delete-modal";
+                document.body.appendChild(modal);
+            }
+
+            modal.className = "fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 transition-all duration-150";
+            modal.innerHTML = 
+                '<div class="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full overflow-hidden p-5 animate-in fade-in zoom-in-95 duration-150" onclick="event.stopPropagation()">' +
+                    '<div class="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 text-xl mx-auto mb-3 shadow-xs">' +
+                        '<i class="bi bi-trash3-fill"></i>' +
+                    '</div>' +
+                    '<h3 class="text-base font-bold text-slate-900 text-center tracking-tight">' + escapeStr(title) + '</h3>' +
+                    '<p class="text-xs text-slate-500 text-center mt-1.5 leading-relaxed">' + escapeStr(message) + '</p>' +
+                    (itemName ? (
+                        '<div class="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-2 text-center text-xs font-semibold text-slate-800 break-words flex items-center justify-center">' +
+                            '<i class="bi bi-exclamation-triangle text-rose-500 mr-1.5 text-xs"></i>' +
+                            '<span class="truncate">' + escapeStr(itemName) + '</span>' +
+                        '</div>'
+                    ) : '') +
+                    '<div class="mt-4">' +
+                        '<label class="block text-[11px] font-semibold text-slate-700 mb-1.5 text-center">' +
+                            'To confirm, type <span class="font-mono font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 select-all">DELETE</span> below:' +
+                        '</label>' +
+                        '<input type="text" id="delete-confirm-input" class="w-full text-center font-mono font-bold uppercase tracking-wider text-xs px-3 py-2 bg-white border-2 border-slate-200 focus:border-rose-500 rounded-lg text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:tracking-normal focus:outline-none transition shadow-2xs" placeholder="Type DELETE" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" />' +
+                    '</div>' +
+                    '<div class="grid grid-cols-2 gap-2.5 mt-5 pt-3 border-t border-slate-100">' +
+                        '<button type="button" id="delete-modal-cancel-btn" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg transition cursor-pointer flex items-center justify-center">' +
+                            '<i class="bi bi-x mr-1 text-sm"></i> Cancel' +
+                        '</button>' +
+                        '<button type="button" id="delete-modal-confirm-btn" disabled class="w-full py-2 bg-slate-200 text-slate-400 font-semibold text-xs rounded-lg cursor-not-allowed transition flex items-center justify-center">' +
+                            '<i class="bi bi-trash3 mr-1 text-xs"></i> Delete' +
+                        '</button>' +
+                    '</div>' +
+                '</div>';
+
+            modal.style.display = "flex";
+            modal.classList.remove("hidden");
+
+            var input = modal.querySelector("#delete-confirm-input");
+            var cancelBtn = modal.querySelector("#delete-modal-cancel-btn");
+            var confirmBtn = modal.querySelector("#delete-modal-confirm-btn");
+
+            function close(result) {
+                modal.style.display = "none";
+                modal.classList.add("hidden");
+                document.removeEventListener("keydown", onKeyDown);
+                modal.onclick = null;
+                resolve(result);
+            }
+
+            function onKeyDown(e) {
+                if (e.key === "Escape") {
+                    e.preventDefault();
+                    close(false);
+                } else if (e.key === "Enter" && !confirmBtn.disabled) {
+                    e.preventDefault();
+                    close(true);
+                }
+            }
+
+            input.addEventListener("input", function() {
+                var val = input.value.trim().toUpperCase();
+                if (val === "DELETE") {
+                    confirmBtn.disabled = false;
+                    confirmBtn.className = "w-full py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-lg transition cursor-pointer shadow-xs flex items-center justify-center";
+                } else {
+                    confirmBtn.disabled = true;
+                    confirmBtn.className = "w-full py-2 bg-slate-200 text-slate-400 font-semibold text-xs rounded-lg cursor-not-allowed transition flex items-center justify-center";
+                }
+            });
+
+            cancelBtn.onclick = function() { close(false); };
+            confirmBtn.onclick = function() {
+                if (!confirmBtn.disabled) close(true);
+            };
+            modal.onclick = function(e) {
+                if (e.target === modal) close(false);
+            };
+            document.addEventListener("keydown", onKeyDown);
+
+            setTimeout(function() {
+                if (input) input.focus();
+            }, 60);
+        });
+    };
+
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", navInit);
     } else {

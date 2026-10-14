@@ -272,8 +272,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (btnClearAll) {
-        btnClearAll.addEventListener("click", () => {
-            if (confirm("Are you sure you want to clear all 100 OTP fields?")) {
+        btnClearAll.addEventListener("click", async () => {
+            const confirmed = await window.confirmDelete({
+                title: "Clear All OTP Fields",
+                message: "Are you sure you want to clear all 100 OTP input fields? This cannot be undone."
+            });
+            if (confirmed) {
                 for (let i = 1; i <= 100; i++) {
                     const inp = qs(`#otp-input-${i}`);
                     if (inp) inp.value = "";

@@ -374,7 +374,12 @@ qs("#edit-bank-form")?.addEventListener("submit", async (e) => {
 });
 
 window.deleteBank = async function(id, name) {
-    if (!confirm(`Are you sure you want to delete bank "${name}"?`)) return;
+    const confirmed = await window.confirmDelete({
+        title: "Delete Bank Organization",
+        itemName: name,
+        message: `Are you sure you want to delete bank "${name}"? This will affect its branches and devices.`
+    });
+    if (!confirmed) return;
     try {
         await api(`/api/banks/${id}`, { method: "DELETE" });
         showToast(`Bank "${name}" deleted successfully!`);
@@ -557,7 +562,12 @@ qs("#edit-branch-form")?.addEventListener("submit", async (e) => {
 });
 
 window.deleteBranch = async function(id, name) {
-    if (!confirm(`Are you sure you want to delete branch "${name}"?`)) return;
+    const confirmed = await window.confirmDelete({
+        title: "Delete Branch Location",
+        itemName: name,
+        message: `Are you sure you want to delete branch "${name}"? This action cannot be undone.`
+    });
+    if (!confirmed) return;
     try {
         await api(`/api/banks/branches/${id}`, { method: "DELETE" });
         showToast(`Branch "${name}" deleted successfully!`);

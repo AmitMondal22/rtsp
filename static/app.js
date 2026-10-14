@@ -1933,9 +1933,14 @@ window.openEditDeviceModal = async function(deviceId) {
 };
 
 window.deleteDeviceById = async function(deviceId) {
-    const device = state.devices.find(d => d.id === deviceId);
+    const device = (state.devices || []).find(d => d.id === deviceId);
     if (!device) return;
-    if (!confirm(`Delete device "${device.name}"? This cannot be undone.`)) return;
+    const confirmed = await window.confirmDelete({
+        title: "Delete Camera Device",
+        itemName: device.name,
+        message: `Are you sure you want to delete device "${device.name}"? This action cannot be undone.`
+    });
+    if (!confirmed) return;
     try {
         await api(`/api/devices/${deviceId}`, { method: "DELETE" });
         if (state.selectedDeviceId === deviceId) {
@@ -2533,7 +2538,12 @@ window.openEditBankModal = function(id) {
 };
 
 window.deleteBank = async function(id, name) {
-    if (!confirm(`Are you sure you want to delete bank "${name}"? This will affect its branches and devices.`)) return;
+    const confirmed = await window.confirmDelete({
+        title: "Delete Bank Organization",
+        itemName: name,
+        message: `Are you sure you want to delete bank "${name}"? This will affect its branches and devices.`
+    });
+    if (!confirmed) return;
     try {
         await api(`/api/banks/${id}`, { method: "DELETE" });
         showToast(`Bank "${name}" deleted successfully!`);
@@ -2987,7 +2997,12 @@ window.openEditBranchModal = function(id) {
 };
 
 window.deleteBranch = async function(id, name) {
-    if (!confirm(`Are you sure you want to delete branch "${name}"?`)) return;
+    const confirmed = await window.confirmDelete({
+        title: "Delete Branch Location",
+        itemName: name,
+        message: `Are you sure you want to delete branch "${name}"? This action cannot be undone.`
+    });
+    if (!confirmed) return;
     try {
         await api(`/api/banks/branches/${id}`, { method: "DELETE" });
         showToast(`Branch "${name}" deleted successfully!`);
@@ -3268,7 +3283,12 @@ window.openEditUserModal = function(id) {
 };
 
 window.deleteUser = async function(id, username) {
-    if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
+    const confirmed = await window.confirmDelete({
+        title: "Delete User Account",
+        itemName: username,
+        message: `Are you sure you want to delete user "${username}"? They will lose access immediately.`
+    });
+    if (!confirmed) return;
     try {
         await api(`/api/users/${id}`, { method: "DELETE" });
         showToast(`User "${username}" deleted successfully!`);
@@ -3437,8 +3457,12 @@ function initOfflineOtpEvents() {
     });
 
     // Clear All
-    qs("#btn-clear-all")?.addEventListener("click", () => {
-        if (confirm("Are you sure you want to clear all 100 OTP fields?")) {
+    qs("#btn-clear-all")?.addEventListener("click", async () => {
+        const confirmed = await window.confirmDelete({
+            title: "Clear All OTP Fields",
+            message: "Are you sure you want to clear all 100 OTP input fields? This cannot be undone."
+        });
+        if (confirmed) {
             for (let i = 1; i <= 100; i++) {
                 const inp = qs(`#otp-input-${i}`);
                 if (inp) inp.value = "";

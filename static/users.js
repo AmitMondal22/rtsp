@@ -455,7 +455,12 @@ qs("#edit-user-form")?.addEventListener("submit", async (e) => {
 
 // Delete User Handler
 window.deleteUser = async function(id, username) {
-    if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
+    const confirmed = await window.confirmDelete({
+        title: "Delete User Account",
+        itemName: username,
+        message: `Are you sure you want to delete user "${username}"? They will lose access immediately.`
+    });
+    if (!confirmed) return;
     try {
         await api(`/api/banks/users/${id}`, { method: "DELETE" });
         showToast(`User "${username}" deleted successfully!`);
