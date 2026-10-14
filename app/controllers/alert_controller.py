@@ -35,51 +35,8 @@ def format_time_ago(dt: datetime.datetime) -> str:
 
 
 def seed_default_alerts_if_empty(db: Session):
-    count = db.query(SecurityAlert).count()
-    if count == 0:
-        now = get_ist_now()
-        five_days_ago = now - datetime.timedelta(days=5)
-        default_alerts = [
-            SecurityAlert(
-                title="3 invalid OTP attempts at CS-Vault-01",
-                is_simulated=True,
-                severity="High",
-                alert_type="Invalid Otp",
-                device_name="ANG-CS-01",
-                camera_name="CAM-CS-Vault",
-                status="Open",
-                handled_by="—",
-                created_at=five_days_ago,
-                details="Three consecutive failed OTP entry attempts detected at Central Secure Vault door unit.",
-            ),
-            SecurityAlert(
-                title="LB-Shutter-01 held open",
-                is_simulated=True,
-                severity="Medium",
-                alert_type="Door Held Open",
-                device_name="ANG-LB-01",
-                camera_name="CAM-LB-Overview",
-                status="Open",
-                handled_by="—",
-                created_at=five_days_ago,
-                details="Main loading bay shutter sensor remained in held-open state exceeding configured threshold of 180 seconds.",
-            ),
-            SecurityAlert(
-                title="ANG-LB-02 offline",
-                is_simulated=True,
-                severity="Critical",
-                alert_type="Device Offline",
-                device_name="ANG-LB-02",
-                camera_name="CAM-LB-Gate",
-                status="Open",
-                handled_by="—",
-                created_at=five_days_ago,
-                details="Hardware heartbeat and RTSP video pipeline unresponsive. Potential power drop or network cable severance.",
-            ),
-        ]
-        for a in default_alerts:
-            db.add(a)
-        db.commit()
+    # No dummy or seed alerts
+    pass
 
 
 class AlertStatusUpdate(BaseModel):
@@ -242,8 +199,7 @@ def reset_default_alerts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Reset alerts back to the original 3 default simulation records."""
-    db.query(SecurityAlert).delete()
+    """Clear all simulated or dummy alerts."""
+    db.query(SecurityAlert).filter(SecurityAlert.is_simulated == True).delete()
     db.commit()
-    seed_default_alerts_if_empty(db)
-    return {"success": True, "message": "Security alerts reset to initial 3 simulated records."}
+    return {"success": True, "message": "All simulated alerts cleared."}

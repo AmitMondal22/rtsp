@@ -95,7 +95,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const rememberMeCheckbox = qs("#remember-me");
     const togglePasswordBtn = qs("#toggle-password-btn");
     const togglePasswordIcon = qs("#password-toggle-icon");
-    const quickFillBtn = qs("#quick-fill-admin-btn");
     const dismissErrorBtn = qs("#dismiss-error-btn");
     const loginForm = qs("#login-form");
     const submitBtn = qs("#login-submit-btn");
@@ -123,17 +122,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 togglePasswordIcon.className = "bi bi-eye text-sm text-slate-400";
                 togglePasswordBtn.title = "Show password";
             }
-        });
-    }
-
-    // Quick Fill Admin Credentials
-    if (quickFillBtn) {
-        quickFillBtn.addEventListener("click", () => {
-            if (usernameInput) usernameInput.value = "admin";
-            if (passwordInput) passwordInput.value = "admin123";
-            clearError();
-            showToast("Admin credentials applied", "info");
-            if (submitBtn) submitBtn.focus();
         });
     }
 

@@ -73,18 +73,7 @@ def seed_database():
             db.commit()
             print("[DB] Default admin user created.")
 
-        super_admin = db.query(User).filter(User.email == "superadmin@example.com").first()
-        if not super_admin:
-            super_admin = User(
-                username="superadmin",
-                email="superadmin@example.com",
-                hashed_password=hash_password("adminpassword"),
-                role="super_admin",
-                is_active=True
-            )
-            db.add(super_admin)
-            db.commit()
-            print("[DB] Default superadmin user created.")
+        pass
 
     except Exception as e:
         print(f"[DB] Init failed: {e}")

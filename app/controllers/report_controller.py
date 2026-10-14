@@ -17,31 +17,8 @@ router = APIRouter(prefix="/api/reports", tags=["Reports"])
 
 
 def seed_demo_devices_and_metrics_if_needed(db: Session):
-    """Seed demo devices matching reference architecture if missing."""
-    demo_devices = [
-        {"name": "ANG-SR-01", "location": "Server Room 1", "is_online": True, "rtsp_url": "rtsp://localhost:8554/live/sr01"},
-        {"name": "ANG-CS-01", "location": "Central Security Vault", "is_online": True, "rtsp_url": "rtsp://localhost:8554/live/cs01"},
-        {"name": "ANG-LB-01", "location": "Loading Bay Shutter 1", "is_online": True, "rtsp_url": "rtsp://localhost:8554/live/lb01"},
-        {"name": "ANG-LB-02", "location": "Loading Bay Gate 2", "is_online": False, "rtsp_url": "rtsp://localhost:8554/live/lb02"},
-    ]
-
-    for d_spec in demo_devices:
-        existing = db.query(Device).filter(Device.name == d_spec["name"]).first()
-        if not existing:
-            first_user = db.query(User).first()
-            new_d = Device(
-                name=d_spec["name"],
-                location=d_spec["location"],
-                is_online=d_spec["is_online"],
-                rtsp_url=d_spec["rtsp_url"],
-                owner_id=first_user.id if first_user else 1,
-            )
-            db.add(new_d)
-            db.commit()
-
-    # Also seed security alerts if empty
-    from app.controllers.alert_controller import seed_default_alerts_if_empty
-    seed_default_alerts_if_empty(db)
+    # No demo devices or fake metrics
+    pass
 
 
 @router.get("/summary")
@@ -50,8 +27,6 @@ def get_reports_summary(
     current_user: User = Depends(get_current_user),
 ):
     """Compute live organizational report metrics, time-series distributions, and per-device KPIs."""
-    seed_demo_devices_and_metrics_if_needed(db)
-
     now = get_ist_now()
     seven_days_ago = now - datetime.timedelta(days=7)
 
@@ -82,12 +57,6 @@ def get_reports_summary(
         else:
             pending_count += 1
 
-    # Ensure baseline matches screenshot if queue is clean
-    if total_requests == 0:
-        total_requests = 2
-        pending_count = 2
-        approved_count = 0
-
     approval_rate = f"{round((approved_count / total_requests * 100)) if total_requests > 0 else 0}%"
     avg_time_to_otp = f"{round(sum(ack_times)/len(ack_times), 1)}s" if ack_times else "—"
 
@@ -102,7 +71,7 @@ def get_reports_summary(
         d_name = a.device_name or "Unknown"
         alerts_per_device[d_name] = alerts_per_device.get(d_name, 0) + 1
 
-    # 4. Generate Last 7 Days Time-Series Data
+    # 4. Generate Last 7 Days Time-Series Data (Real activity only)
     dates_list = []
     requests_series = []
     alerts_series = []
@@ -116,16 +85,10 @@ def get_reports_summary(
         day_start = day_date.replace(hour=0, minute=0, second=0, microsecond=0)
         day_end = day_date.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        # Count requests on that day
+        # Count real requests and alerts on that day
         r_cnt = sum(1 for m in req_messages if m.created_at and day_start <= (m.created_at.replace(tzinfo=now.tzinfo) if m.created_at.tzinfo is None else m.created_at) <= day_end)
         a_cnt = sum(1 for a in alerts if a.created_at and day_start <= (a.created_at.replace(tzinfo=now.tzinfo) if a.created_at.tzinfo is None else a.created_at) <= day_end)
-        e_cnt = r_cnt * 3 + a_cnt * 2 + (18 if i == 5 else (5 if i == 0 else 0))
-
-        # Seed baseline day if empty
-        if i == 5 and r_cnt == 0 and a_cnt == 0:
-            r_cnt = 2
-            a_cnt = 3
-            e_cnt = 18
+        e_cnt = r_cnt + a_cnt
 
         requests_series.append(r_cnt)
         alerts_series.append(a_cnt)
@@ -138,15 +101,9 @@ def get_reports_summary(
         device_requests_map[did] = device_requests_map.get(did, 0) + 1
 
     per_device_rows = []
-    # Display the standard fleet devices
     for d in devices:
         req_count = device_requests_map.get(d.id, 0)
-        if req_count == 0 and d.name in ("ANG-SR-01", "ANG-CS-01"):
-            req_count = 1
-
         alert_count = alerts_per_device.get(d.name, 0)
-        if alert_count == 0 and d.name in ("ANG-CS-01", "ANG-LB-01", "ANG-LB-02"):
-            alert_count = 1
 
         per_device_rows.append({
             "device": d.name,
@@ -155,8 +112,7 @@ def get_reports_summary(
             "online": "yes" if d.is_online is not False else "no",
         })
 
-    # Sort so ANG-SR-01, ANG-CS-01, ANG-LB-01, ANG-LB-02 come first
-    per_device_rows.sort(key=lambda x: (0 if "ANG" in x["device"] else 1, x["device"]))
+    per_device_rows.sort(key=lambda x: x["device"])
 
     return {
         "success": True,
@@ -173,15 +129,15 @@ def get_reports_summary(
             "events": events_series,
         },
         "request_outcomes": {
-            "labels": ["pending", "approved"] if approved_count > 0 else ["pending"],
-            "data": [pending_count, approved_count] if approved_count > 0 else [pending_count],
+            "labels": ["pending", "approved"] if (approved_count > 0 or pending_count > 0) else ["no requests"],
+            "data": [pending_count, approved_count] if (approved_count > 0 or pending_count > 0) else [0],
         },
         "alerts_by_severity": {
             "labels": ["critical", "high", "medium"],
             "data": [
-                max(alerts_by_sev.get("critical", 0), 1),
-                max(alerts_by_sev.get("high", 0), 1),
-                max(alerts_by_sev.get("medium", 0), 1),
+                alerts_by_sev.get("critical", 0),
+                alerts_by_sev.get("high", 0),
+                alerts_by_sev.get("medium", 0),
             ],
         },
         "per_device_summary": per_device_rows,
@@ -195,7 +151,6 @@ def export_report_csv(
     current_user: User = Depends(get_current_user),
 ):
     """Generate and stream dynamic CSV reports for Requests, Alerts, or Devices."""
-    seed_demo_devices_and_metrics_if_needed(db)
     output = io.StringIO()
     writer = csv.writer(output)
 
@@ -204,9 +159,6 @@ def export_report_csv(
     if rtype == "requests":
         writer.writerow(["Request ID", "Device ID", "Message Type", "Status", "1st OTP", "2nd OTP", "Created At", "Details"])
         messages = db.query(ThreadMessage).filter(ThreadMessage.message_type.in_(["otp_request", "otp_request_ack", "no_threat"])).all()
-        if not messages:
-            writer.writerow([1, "ANG-SR-01", "otp_request", "Pending", "—", "—", get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), "Dual OTP Authorization Request"])
-            writer.writerow([2, "ANG-CS-01", "otp_request", "Pending", "—", "—", get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), "Vault Door Authorization Request"])
         for m in messages:
             p = m.payload or {}
             writer.writerow([
