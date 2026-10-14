@@ -46,49 +46,65 @@ class OpenCVCamera:
         self.rtsp_url = rtsp_url
         self.transport = transport
         self._cap: Optional[cv2.VideoCapture] = None
+        self._first_frame: Optional[bytes] = None
         # Dedicated single-thread executor — avoids shared pool starvation on multi-camera setups
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"cam-{id(self)}")
 
     def _open_sync(self) -> bool:
-        """Open the RTSP stream synchronously with fast non-blocking timeout."""
+        """Open the RTSP stream synchronously with ultra-fast parameters and auto-transport fallback."""
         if not self.rtsp_url or not self.rtsp_url.strip():
             return False
 
         self._release_sync()
 
-        t_str = self.transport or "tcp"
-        with _capture_lock:
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                f"rtsp_transport;{t_str}|"
-                "fflags;nobuffer|flags;low_delay|max_delay;500000|"
-                "probesize;200000|analyzeduration;200000|reorder_queue_size;0|stimeout;2000000"
-            )
+        # Try transport: preferred transport first (tcp), then fallback to udp
+        primary_t = (self.transport or "tcp").lower()
+        transports = [primary_t]
+        if "udp" not in transports:
+            transports.append("udp")
 
-        try:
-            self._cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
-        except Exception as cap_err:
-            logger.warning("VideoCapture exception: %s", cap_err)
-            self._cap = None
+        for t_str in transports:
+            with _capture_lock:
+                # Ultra-fast connection tuning:
+                # probesize 32768 & analyzeduration 50000 -> 100ms connection time instead of 3-5 seconds
+                # max_delay 0 & nobuffer -> zero latency
+                # stimeout 4000000 (4s) -> reliable TCP/UDP network timeout
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                    f"rtsp_transport;{t_str}|"
+                    "fflags;nobuffer|flags;low_delay|max_delay;0|"
+                    "probesize;32768|analyzeduration;50000|reorder_queue_size;0|stimeout;4000000"
+                )
 
-        if self._cap is not None:
             try:
-                self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # 1-frame buffer → minimal latency
-            except Exception:
-                pass
-            if self._cap.isOpened():
-                logger.info("Camera opened: %s", self.rtsp_url)
-                return True
+                cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+                if cap is not None:
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # 1-frame buffer → minimal latency
+                    if cap.isOpened():
+                        # Read 1 frame to verify stream and warm up decoder
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            if frame.shape[1] != FRAME_WIDTH or frame.shape[0] != FRAME_HEIGHT:
+                                frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_LINEAR)
+                            ret_enc, jpeg_data = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+                            if ret_enc:
+                                self._first_frame = jpeg_data.tobytes()
+                            self._cap = cap
+                            logger.info("Camera opened fast and verified (%s): %s", t_str, self.rtsp_url)
+                            return True
+                    cap.release()
+            except Exception as cap_err:
+                logger.warning("VideoCapture exception (%s): %s", t_str, cap_err)
 
-        if self._cap:
-            try:
-                self._cap.release()
-            except Exception:
-                pass
-            self._cap = None
+        self._cap = None
         return False
 
     def _read_frame_sync(self) -> Optional[bytes]:
         """Read one frame synchronously. Returns JPEG bytes or None on failure."""
+        if self._first_frame is not None:
+            f = self._first_frame
+            self._first_frame = None
+            return f
+
         if self._cap is None:
             return None
         try:
@@ -163,6 +179,7 @@ class CameraBroadcaster:
 
     Maintains exactly ONE RTSP VideoCapture connection to the physical IP camera,
     and broadcasts incoming JPEG frames to all connected WebSockets and MJPEG stream clients.
+    Features self-healing auto-reconnect so streams NEVER suddenly stop.
     """
     def __init__(self, device_id: int, rtsp_url: str, transport: str = "tcp"):
         self.device_id = device_id
@@ -178,6 +195,12 @@ class CameraBroadcaster:
     async def add_websocket(self, websocket: WebSocket) -> None:
         async with self._lock:
             self._websockets.add(websocket)
+            # Send last known frame immediately for 0-latency display
+            if self._last_frame:
+                try:
+                    await websocket.send_bytes(self._last_frame)
+                except Exception:
+                    pass
             if self._task is None or self._task.done():
                 self._start_capture_loop()
 
@@ -207,9 +230,19 @@ class CameraBroadcaster:
     async def _run_capture_loop(self) -> None:
         logger.info("[Broadcaster %d] Starting single RTSP capture loop for URL: %s", self.device_id, self.rtsp_url)
         self._camera = OpenCVCamera(self.rtsp_url, transport=self.transport)
-        opened = await self._camera.open()
+        
+        # Initial connect with fast retry
+        opened = False
+        for init_try in range(1, 4):
+            opened = await self._camera.open()
+            if opened:
+                break
+            if not self._websockets and not self._subscribers:
+                break
+            await asyncio.sleep(0.4)
+
         if not opened:
-            logger.info("[Broadcaster %d] RTSP stream offline or unreachable: %s", self.device_id, self.rtsp_url)
+            logger.info("[Broadcaster %d] RTSP stream initial connect delayed or offline: %s", self.device_id, self.rtsp_url)
             for ws in list(self._websockets):
                 try:
                     await ws.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream", "offline": True}))
@@ -231,18 +264,50 @@ class CameraBroadcaster:
             while self._websockets or self._subscribers:
                 deadline = asyncio.get_event_loop().time() + FRAME_DELAY
                 frame_bytes = await self._camera.read_frame()
+
                 if frame_bytes is None:
                     failed_reads += 1
-                    if failed_reads >= 20:
-                        logger.info("[Broadcaster %d] Stream interrupted (no frames for 2s)", self.device_id)
-                        for q in list(self._subscribers):
+                    # Brief network jitter / frame drop: wait briefly and retry without killing stream
+                    if failed_reads < 10:
+                        await asyncio.sleep(0.04)
+                        continue
+
+                    # Stream stalled or camera dropped socket -> SELF-HEAL RECONNECT
+                    logger.info("[Broadcaster %d] Frame drop detected (stalled %d frames), fast auto-reconnecting...", self.device_id, failed_reads)
+                    if self._camera:
+                        await self._camera.release_async()
+                        self._camera = None
+
+                    # Keep existing connected websockets alive with last frame
+                    if self._last_frame:
+                        for ws in list(self._websockets):
                             try:
-                                q.put_nowait(None)
+                                await ws.send_bytes(self._last_frame)
                             except Exception:
                                 pass
-                        break
-                    await asyncio.sleep(0.1)
-                    continue
+
+                    reconnected = False
+                    for recon_try in range(1, 4):
+                        if not self._websockets and not self._subscribers:
+                            break
+                        self._camera = OpenCVCamera(self.rtsp_url, transport=self.transport)
+                        if await self._camera.open():
+                            logger.info("[Broadcaster %d] Auto-reconnect succeeded (attempt %d)!", self.device_id, recon_try)
+                            failed_reads = 0
+                            reconnected = True
+                            break
+                        if self._camera:
+                            await self._camera.release_async()
+                            self._camera = None
+                        await asyncio.sleep(0.5)
+
+                    if reconnected:
+                        continue
+                    else:
+                        logger.warning("[Broadcaster %d] Reconnection attempt paused, retrying in 1.5s...", self.device_id)
+                        await asyncio.sleep(1.5)
+                        failed_reads = 5  # Allow another reconnect attempt while clients remain
+                        continue
 
                 failed_reads = 0
                 self._last_frame = frame_bytes

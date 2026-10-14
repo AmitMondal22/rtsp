@@ -229,81 +229,102 @@ function startWebSocketStream(deviceId) {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/api/camera/${deviceId}/ws${state.token ? `?token=${encodeURIComponent(state.token)}` : ""}`;
 
-    setTimeout(() => {
-        if (currentStreamMode !== "websocket" || state.selectedDeviceId !== deviceId) return;
-        try {
-            activeWebSocket = new WebSocket(wsUrl);
-            activeWebSocket.binaryType = "blob";
+    // Instant connection — no arbitrary setTimeout delay
+    try {
+        activeWebSocket = new WebSocket(wsUrl);
+        activeWebSocket.binaryType = "blob";
 
-            activeWebSocket.onopen = () => {
+        activeWebSocket.onopen = () => {
+            cancelStreamRetry();
+            setStreamStatus("Live (WebSocket)", "live");
+            startCameraTimestamp();
+        };
+
+        activeWebSocket.onmessage = async (event) => {
+            if (typeof event.data === "string") {
+                try {
+                    const parsed = JSON.parse(event.data);
+                    if (parsed.ping) return; // Keepalive ping
+                    if (parsed.connecting) {
+                        setStreamStatus("Connecting camera feed...", "info");
+                        return;
+                    }
+                    if (parsed.error && !parsed.offline) {
+                        startMjpegStream(deviceId);
+                    }
+                } catch (e) {}
+                return;
+            }
+
+            if (event.data instanceof Blob) {
+                streamRetryCount = 0;
                 cancelStreamRetry();
                 setStreamStatus("Live (WebSocket)", "live");
-                startCameraTimestamp();
-            };
 
-            activeWebSocket.onmessage = async (event) => {
-                if (typeof event.data === "string") {
+                if (canvas && ctx && window.createImageBitmap) {
                     try {
-                        const parsed = JSON.parse(event.data);
-                        if (parsed.error) {
-                            startMjpegStream(deviceId);
+                        const bitmap = await createImageBitmap(event.data);
+                        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                            canvas.width = bitmap.width;
+                            canvas.height = bitmap.height;
                         }
-                    } catch (e) {}
-                    return;
-                }
+                        ctx.drawImage(bitmap, 0, 0);
+                        bitmap.close();
 
-                if (event.data instanceof Blob) {
-                    streamRetryCount = 0;
-                    cancelStreamRetry();
-
-                    if (canvas && ctx && window.createImageBitmap) {
-                        try {
-                            const bitmap = await createImageBitmap(event.data);
-                            if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-                                canvas.width = bitmap.width;
-                                canvas.height = bitmap.height;
-                            }
-                            ctx.drawImage(bitmap, 0, 0);
-                            bitmap.close();
-                            setStreamStatus("Live (WebSocket)", "live");
-                            return;
-                        } catch (e) {}
-                    }
-
-                    // Fallback to Image Object URL
-                    if (mjpegEl) {
-                        mjpegEl.classList.remove("hidden");
-                        mjpegEl.style.display = "block";
-                        if (canvas) {
-                            canvas.classList.add("hidden");
-                            canvas.style.display = "none";
+                        // Keep canvas visible and active
+                        if (canvas.style.display === "none") {
+                            canvas.style.display = "block";
+                            canvas.classList.remove("hidden");
                         }
-                        const newUrl = URL.createObjectURL(event.data);
-                        mjpegEl.src = newUrl;
-                        if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-                        currentBlobUrl = newUrl;
-                        setStreamStatus("Live (WebSocket)", "live");
+                        if (mjpegEl && mjpegEl.style.display !== "none") {
+                            mjpegEl.style.display = "none";
+                            mjpegEl.classList.add("hidden");
+                        }
+                        return;
+                    } catch (e) {
+                        // Corrupted single network packet / frame drop — ignore frame and wait for next
+                        return;
                     }
                 }
-            };
 
-            activeWebSocket.onerror = (err) => {
-                console.warn("WebSocket stream error, fallback to MJPEG:", err);
-                if (currentStreamMode === "websocket" && state.selectedDeviceId === deviceId) {
+                // Fallback for browsers without createImageBitmap
+                if (mjpegEl) {
+                    if (canvas) {
+                        canvas.classList.add("hidden");
+                        canvas.style.display = "none";
+                    }
+                    mjpegEl.classList.remove("hidden");
+                    mjpegEl.style.display = "block";
+                    const newUrl = URL.createObjectURL(event.data);
+                    mjpegEl.src = newUrl;
+                    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+                    currentBlobUrl = newUrl;
+                }
+            }
+        };
+
+        activeWebSocket.onerror = (err) => {
+            console.warn("WebSocket stream error:", err);
+        };
+
+        activeWebSocket.onclose = () => {
+            if (currentStreamMode === "websocket" && state.selectedDeviceId === deviceId) {
+                if (streamRetryCount < 2) {
+                    streamRetryCount++;
+                    setTimeout(() => {
+                        if (currentStreamMode === "websocket" && state.selectedDeviceId === deviceId) {
+                            startWebSocketStream(deviceId);
+                        }
+                    }, 400);
+                } else {
                     startMjpegStream(deviceId);
                 }
-            };
-
-            activeWebSocket.onclose = () => {
-                if (currentStreamMode === "websocket" && state.selectedDeviceId === deviceId) {
-                    startMjpegStream(deviceId);
-                }
-            };
-        } catch (e) {
-            console.error("Failed to initialize WebSocket stream:", e);
-            startMjpegStream(deviceId);
-        }
-    }, 100);
+            }
+        };
+    } catch (e) {
+        console.error("Failed to initialize WebSocket stream:", e);
+        startMjpegStream(deviceId);
+    }
 }
 
 function stopWebSocket() {

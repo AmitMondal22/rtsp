@@ -127,10 +127,16 @@ async def websocket_stream(
 
         try:
             while True:
-                # Keep WebSocket open until client closes tab/connection
+                # Keep WebSocket open with heartbeat until client closes tab/connection
                 try:
-                    data = await websocket.receive()
+                    data = await asyncio.wait_for(websocket.receive(), timeout=15.0)
                     if data.get("type") == "websocket.disconnect":
+                        break
+                except asyncio.TimeoutError:
+                    # Heartbeat ping to keep connection alive
+                    try:
+                        await websocket.send_text(json.dumps({"ping": True}))
+                    except Exception:
                         break
                 except WebSocketDisconnect:
                     break
@@ -139,7 +145,6 @@ async def websocket_stream(
                     logger.debug("WebSocket runtime disconnect for device %d: %s", device_id, re)
                     break
                 except Exception as inner_e:
-                    # 'WebSocketProtocol' attribute errors or other disconnect signals
                     err_str = str(inner_e)
                     if "transfer_data_task" in err_str or "disconnect" in err_str.lower():
                         break
@@ -189,9 +194,9 @@ def mjpeg_stream(
                     if frame is None:
                         offline_cycles += 1
                         yield boundary + content_type + get_offline_jpeg_frame(device.name) + b"\r\n"
-                        if offline_cycles >= 2:
+                        if offline_cycles >= 60:  # Allow up to 60s for camera auto-healing
                             break
-                        await asyncio.sleep(1.0)
+                        await asyncio.sleep(0.5)
                         continue
 
                     offline_cycles = 0
@@ -199,9 +204,9 @@ def mjpeg_stream(
                 except asyncio.TimeoutError:
                     offline_cycles += 1
                     yield boundary + content_type + get_offline_jpeg_frame(device.name) + b"\r\n"
-                    if offline_cycles >= 2:
+                    if offline_cycles >= 60:
                         break
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             pass
         finally:
