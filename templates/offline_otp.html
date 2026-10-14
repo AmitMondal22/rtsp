@@ -17,15 +17,13 @@
 <body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
 
     <!-- ── Top Header Navigation ── -->
-    <!-- Master Common Top Bar -->
-    <header id="app-header"></header>
+    {% include 'components/topbar.html' %}
 
     <!-- Page Body -->
     <div class="flex flex-1 overflow-hidden">
 
         <!-- ── Left Navigation Sidebar ── -->
-        <!-- Master Common Navigation Sidebar -->
-        <aside id="app-sidebar"></aside>
+        {% include 'components/sidebar.html' %}
 
         <!-- Main Content -->
         <main class="flex-1 bg-[#f8fafc] overflow-y-auto p-6">
@@ -145,7 +143,7 @@
     <!-- Notification Toast -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/static/nav.js?v=2.0"></script>
+    <script src="/static/nav.js?v=50.0"></script>
     <script src="/static/offline_otp.js?v=2.0"></script>
 </body>
 

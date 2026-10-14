@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
 from app.database import engine, Base
@@ -194,73 +195,75 @@ app.include_router(report_controller.router)
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+templates = Jinja2Templates(directory="templates")
+
 
 @app.get("/")
 @app.get("/login")
-def serve_login():
-    return FileResponse("templates/login.html")
+def serve_login(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
 
 @app.get("/dashboard")
 @app.get("/overview")
-def serve_dashboard():
-    return FileResponse("templates/dashboard.html")
+def serve_dashboard(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
 
 @app.get("/rtsp")
-def serve_rtsp():
-    return FileResponse("templates/rtsp.html")
+def serve_rtsp(request: Request):
+    return templates.TemplateResponse("rtsp.html", {"request": request})
 
 
 @app.get("/devices")
-def serve_devices():
-    return FileResponse("templates/devices.html")
+def serve_devices(request: Request):
+    return templates.TemplateResponse("devices.html", {"request": request})
 
 
 @app.get("/requests")
-def serve_requests():
-    return FileResponse("templates/requests.html")
+def serve_requests(request: Request):
+    return templates.TemplateResponse("requests.html", {"request": request})
 
 
 @app.get("/alerts")
-def serve_alerts():
-    return FileResponse("templates/alerts.html")
+def serve_alerts(request: Request):
+    return templates.TemplateResponse("alerts.html", {"request": request})
 
 
 @app.get("/reports")
-def serve_reports():
-    return FileResponse("templates/reports.html")
+def serve_reports(request: Request):
+    return templates.TemplateResponse("reports.html", {"request": request})
 
 
 @app.get("/online-otp")
 @app.get("/manage-otp")
-def serve_online_otp():
-    return FileResponse("templates/online_otp.html")
+def serve_online_otp(request: Request):
+    return templates.TemplateResponse("online_otp.html", {"request": request})
 
 
 @app.get("/offline-otp")
-def serve_offline_otp():
-    return FileResponse("templates/offline_otp.html")
+def serve_offline_otp(request: Request):
+    return templates.TemplateResponse("offline_otp.html", {"request": request})
 
 
 @app.get("/banks")
-def serve_banks():
-    return FileResponse("templates/banks.html")
+def serve_banks(request: Request):
+    return templates.TemplateResponse("banks.html", {"request": request})
 
 
 @app.get("/branches")
-def serve_branches():
-    return FileResponse("templates/branches.html")
+def serve_branches(request: Request):
+    return templates.TemplateResponse("branches.html", {"request": request})
 
 
 @app.get("/users")
-def serve_users():
-    return FileResponse("templates/users.html")
+def serve_users(request: Request):
+    return templates.TemplateResponse("users.html", {"request": request})
 
 
 @app.get("/logs")
-def serve_logs():
-    return FileResponse("templates/logs.html")
+def serve_logs(request: Request):
+    return templates.TemplateResponse("logs.html", {"request": request})
 
 
 

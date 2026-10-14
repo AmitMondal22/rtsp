@@ -16,12 +16,10 @@
 
 <body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
 
-    <!-- Master Common Top Bar -->
-    <header id="app-header"></header>
+    {% include 'components/topbar.html' %}
 
     <div class="flex flex-1 overflow-hidden">
-        <!-- Master Common Navigation Sidebar -->
-        <aside id="app-sidebar"></aside>
+        {% include 'components/sidebar.html' %}
 
         <main class="flex-1 bg-[#f8fafc] overflow-y-auto p-6 flex flex-col min-w-0">
             <section class="flex flex-col space-y-6">
@@ -48,7 +46,7 @@
         </main>
     </div>
 
-    <div id="toast-container" class="toast-container"></div>    <script src="/static/nav.js?v=3.0"></script>
+    <div id="toast-container" class="toast-container"></div>    <script src="/static/nav.js?v=50.0"></script>
 
     <script src="/static/app.js?v=24.0"></script>
     <script>
