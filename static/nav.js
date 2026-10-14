@@ -268,9 +268,9 @@
         if (header.dataset.navRendered !== "true") {
             header.dataset.navRendered = "true";
             header.innerHTML = `
-                <div class="flex items-center space-x-2 text-xs font-semibold text-slate-700">
-                    <i class="bi bi-shield-check text-sky-600 text-sm"></i>
-                    <span>OTP Shield Console</span>
+                <div class="flex items-center space-x-2.5">
+                    <i class="bi bi-shield-check text-sky-600 text-lg"></i>
+                    <span class="text-sm font-bold tracking-tight text-slate-900">OTP Shield Access Management</span>
                 </div>
 
                 <div class="flex items-center space-x-4">
@@ -297,13 +297,11 @@
             aside.dataset.navRendered = "true";
             aside.innerHTML = `
                 <div>
-                    <!-- Brand Header -->
-                    <div class="flex items-center space-x-3 mb-5 px-1">
-                        <img src="/static/image/logo/OTP_Shield_Access_Management.png" alt="OTP Shield Access Management" class="h-10 w-auto object-contain shrink-0" />
-                        <div class="min-w-0">
-                            <h1 class="text-xs font-bold text-slate-900 tracking-tight leading-tight">OTP Shield</h1>
-                            <span class="text-[10px] text-slate-400 font-medium leading-tight block">Access Management</span>
-                        </div>
+                    <!-- Brand Header: Full Width Logo -->
+                    <div class="mb-5 pb-3 border-b border-slate-100">
+                        <a href="/dashboard" class="block w-full focus:outline-none" title="OTP Shield Access Management">
+                            <img src="/static/image/logo/OTP_Shield_Access_Management.png" alt="OTP Shield Access Management" class="w-full h-auto object-contain block mx-auto" />
+                        </a>
                     </div>
 
                     <!-- Navigation Links -->
