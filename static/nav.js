@@ -1,5 +1,5 @@
 /**
- * nav.js — ANG Smart Access
+ * nav.js — OTP Shield Access Management
  * Shared navigation controller.
  * Handles: auth guard, user info display, role-based sidebar visibility,
  *          header clock, active link highlighting, and logout — across every page.

@@ -4,8 +4,9 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Device Management & Console — ANG Smart Access" />
-    <title>Device Management & Console — ANG Smart Access</title>
+    <meta name="description" content="Device Management & Console — OTP Shield Access Management" />
+    <title>Device Management & Console — OTP Shield Access Management</title>
+    <link rel="icon" type="image/png" href="/static/image/logo/OTP_Shield_Access_Management.png" />
 
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -71,13 +72,11 @@
         <aside class="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4">
             <div>
                 <!-- Brand Header -->
-                <div class="flex items-center space-x-3 mb-5 px-2">
-                    <div class="w-9 h-9 rounded-lg bg-sky-600 flex items-center justify-center text-white text-lg shadow-xs">
-                        <i class="bi bi-shield-check"></i>
-                    </div>
-                    <div>
-                        <h1 class="text-sm font-bold text-slate-900 tracking-tight leading-none">ANG Smart Access</h1>
-                        <span class="text-[11px] text-slate-400 font-medium">Techavo Systems</span>
+                <div class="flex items-center space-x-3 mb-5 px-1">
+                    <img src="/static/image/logo/OTP_Shield_Access_Management.png" alt="OTP Shield Access Management" class="h-10 w-auto object-contain shrink-0" />
+                    <div class="min-w-0">
+                        <h1 class="text-xs font-bold text-slate-900 tracking-tight leading-tight">OTP Shield</h1>
+                        <span class="text-[10px] text-slate-400 font-medium leading-tight block">Access Management</span>
                     </div>
                 </div>
 
@@ -130,7 +129,7 @@
             </div>
 
             <div class="pt-3 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-                <span>ANG System v2.0</span>
+                <span>OTP Shield v2.0</span>
                 <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Connected</span>
             </div>
         </aside>
@@ -232,6 +231,21 @@
                                     </div>
                                     <div id="action-result-body"></div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Pending OTP Requests for Selected Device -->
+                        <div id="device-otp-panel" class="bg-white border border-amber-200 rounded-lg p-3 shadow-xs">
+                            <div class="flex items-center justify-between mb-2">
+                                <h5 class="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center">
+                                    <i class="bi bi-inbox text-amber-500 mr-1.5"></i> Incoming OTP Requests
+                                </h5>
+                                <button onclick="if(typeof window.loadOtpRequests === 'function') window.loadOtpRequests()" class="text-[10px] text-slate-500 hover:text-sky-600 flex items-center">
+                                    <i class="bi bi-arrow-clockwise mr-1"></i>Refresh
+                                </button>
+                            </div>
+                            <div id="device-otp-requests-list" class="space-y-2 max-h-48 overflow-y-auto">
+                                <div class="text-center py-3 text-slate-400 text-[11px]"><i class="bi bi-info-circle mr-1"></i>Select a device to see its pending OTP requests.</div>
                             </div>
                         </div>
 
@@ -370,7 +384,7 @@
 
     <!-- Application Script -->
     <script src="/static/nav.js?v=2.0"></script>
-    <script src="/static/app.js?v=17.0"></script>
+    <script src="/static/app.js?v=24.0"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             if (typeof window.initHeaderClock === 'function') window.initHeaderClock();
@@ -378,6 +392,9 @@
             if (typeof window.loadOrganizationsDropdown === 'function') await window.loadOrganizationsDropdown();
             if (typeof window.loadDevices === 'function') await window.loadDevices();
             
+            // Start polling OTP requests so pending list stays live
+            if (typeof window.startOtpPolling === 'function') window.startOtpPolling();
+
             // Auto-select device if specified in query param ?device=ID
             const urlParams = new URLSearchParams(window.location.search);
             const selId = urlParams.get('device') || urlParams.get('select');

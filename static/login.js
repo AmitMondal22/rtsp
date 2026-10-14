@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════
-//  ANG SMART ACCESS — ENTERPRISE LOGIN CONTROLLER
+//  OTP SHIELD ACCESS MANAGEMENT — ENTERPRISE LOGIN CONTROLLER
 // ══════════════════════════════════════════
 
 const state = {

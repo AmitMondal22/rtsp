@@ -386,10 +386,13 @@ let _otpPanelVisible = true;
 async function loadOtpRequests() {
     if (!state.token) return;
     try {
-        const requests = await api("/api/camera/otp-requests?only_pending=true");
-        const pendingOnly = (requests || []).filter(r => r.status === "Pending");
+        const requests = await api("/api/camera/otp-requests?only_pending=false");
+        const allList = requests || [];
+        const pendingOnly = allList.filter(r => r.status === "Pending");
         state.otpRequests = pendingOnly;
-        renderOtpRequests(pendingOnly);
+        state.allOtpRequests = allList;
+        state.sentOtpRequests = allList.filter(r => r.status !== "Pending");
+        renderOtpRequests(allList);
         updateSendButtonState();
     } catch (err) {
         // Silently ignore — polling errors are non-fatal
@@ -492,26 +495,39 @@ function renderOtpRequests(requests) {
     const fullList = qs("#full-requests-list");
     const countBadge = qs("#otp-request-count");
 
-    // Strictly filter to only Pending requests
-    const pendingRequests = (requests || []).filter(req => req.status === "Pending");
+    const allRequests = requests || [];
+    const pendingRequests = allRequests.filter(req => req.status === "Pending");
+    const sentRequests = allRequests.filter(req => req.status !== "Pending");
+
     if (countBadge) countBadge.textContent = pendingRequests.length;
 
-    const htmlContent = pendingRequests.length === 0
-        ? `<div class="text-slate-400 text-xs py-10 text-center flex flex-col items-center justify-center space-y-2">
-            <i class="bi bi-inbox text-3xl text-slate-300"></i>
-            <p class="mb-0 font-medium text-slate-500">No pending access requests in the queue.</p>
-            <span class="text-[11px] text-slate-400">Incoming dual-key requests from hardware will appear here live.</span>
-          </div>`
-        : pendingRequests.map(req => createRequestCardHtml(req)).join("");
-
-    if (list) {
-        list.innerHTML = htmlContent;
-    }
+    // Full requests list (Pending Access Requests page) — ONLY Pending requests
     if (fullList) {
-        fullList.innerHTML = htmlContent;
+        fullList.innerHTML = pendingRequests.length === 0
+            ? `<div class="text-slate-400 text-xs py-10 text-center flex flex-col items-center justify-center space-y-2">
+                <i class="bi bi-inbox text-3xl text-slate-300"></i>
+                <p class="mb-0 font-medium text-slate-500">No pending access requests in the queue.</p>
+                <span class="text-[11px] text-slate-400">Incoming dual-key requests from hardware will appear here live.</span>
+              </div>`
+            : pendingRequests.map(req => createRequestCardHtml(req)).join("");
+    }
+
+    // Online OTP page list — ONLY Sent / Dispatched OTP requests
+    if (list) {
+        list.innerHTML = sentRequests.length === 0
+            ? `<div class="text-slate-400 text-xs py-10 text-center flex flex-col items-center justify-center space-y-2">
+                <i class="bi bi-send-check text-3xl text-slate-300"></i>
+                <p class="mb-0 font-medium text-slate-500">No sent OTP requests in the log.</p>
+                <span class="text-[11px] text-slate-400">Dual-key OTP actions dispatched to devices will appear here.</span>
+              </div>`
+            : sentRequests.map(req => createRequestCardHtml(req)).join("");
     }
 
     renderOverviewDashboard();
+    // Also update the device-specific OTP request panel if a device is selected
+    if (state.selectedDeviceId) {
+        renderDeviceOtpRequestList(state.selectedDeviceId);
+    }
 }
 
 window.fastProcessRequest = async function(requestId, btnEl) {
@@ -962,6 +978,7 @@ function updateSendButtonState() {
             hint.innerHTML = `<i class="bi bi-info-circle mr-1"></i> Select a camera device`;
             hint.className = "mode-action-hint text-slate-400 text-[10px]";
         }
+        renderDeviceOtpRequestList(null);
         return;
     }
 
@@ -972,19 +989,19 @@ function updateSendButtonState() {
             hint.innerHTML = `<i class="bi bi-key text-purple-600 mr-1"></i> Offline OTP Ready`;
             hint.className = "mode-action-hint text-purple-600 text-[10px]";
         }
+        renderDeviceOtpRequestList(state.selectedDeviceId);
         return;
     }
 
     const deviceRequests = (state.otpRequests || []).filter(
         req => req.device_id === state.selectedDeviceId &&
-               req.message_type === "otp_request" &&
-               (req.payload?.status === "Pending" || !req.payload?.status)
+               req.status === "Pending"
     );
 
     if (deviceRequests.length > 0) {
         btn.disabled = false;
         if (hint) {
-            hint.innerHTML = `<i class="bi bi-check-circle text-emerald-600 mr-1"></i> Active Device Request (Ready to Send)`;
+            hint.innerHTML = `<i class="bi bi-check-circle text-emerald-600 mr-1"></i> ${deviceRequests.length} Active Request(s) — Ready to Send`;
             hint.className = "mode-action-hint text-emerald-600 text-[10px]";
         }
     } else {
@@ -994,7 +1011,92 @@ function updateSendButtonState() {
             hint.className = "mode-action-hint text-amber-600 text-[10px]";
         }
     }
+
+    renderDeviceOtpRequestList(state.selectedDeviceId);
 }
+
+// ── Render OTP Request List for selected device (Devices page) ──
+function renderDeviceOtpRequestList(deviceId) {
+    const container = qs("#device-otp-requests-list");
+    if (!container) return;
+
+    const allPending = (state.otpRequests || []).filter(r => r.status === "Pending");
+
+    if (!deviceId) {
+        if (allPending.length === 0) {
+            container.innerHTML = `<div class="text-center py-3 text-slate-400 text-[11px]"><i class="bi bi-info-circle mr-1"></i>Select a device to see its pending OTP requests.</div>`;
+        } else {
+            container.innerHTML = `
+                <div class="text-[10px] text-amber-700 font-semibold mb-1.5 flex items-center justify-between">
+                    <span><i class="bi bi-bell-fill text-amber-500 mr-1"></i>${allPending.length} Active Pending Request(s):</span>
+                </div>
+                <div class="space-y-1.5">
+                    ${allPending.map(req => {
+                        const timeStr = formatTime(req.created_at);
+                        const devName = req.device_name || `Device #${req.device_id}`;
+                        return `
+                            <div class="bg-amber-50/80 hover:bg-amber-100 border border-amber-200 rounded-lg p-2 transition cursor-pointer" onclick="if(typeof selectDevice === 'function') selectDevice(${req.device_id})">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[11px] font-bold text-slate-900 flex items-center">
+                                        <i class="bi bi-shield-lock text-amber-600 mr-1"></i>${escapeHtml(devName)}
+                                    </span>
+                                    <span class="text-[9px] text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded-full font-bold">
+                                        Pending
+                                    </span>
+                                </div>
+                                <div class="text-[10px] text-slate-500 flex items-center justify-between mt-1">
+                                    <span><i class="bi bi-clock mr-1 text-slate-400"></i>${timeStr}</span>
+                                    <button onclick="event.stopPropagation(); window.fastProcessRequest(${req.id}, this)" class="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold flex items-center shadow-xs">
+                                        <i class="bi bi-lightning-charge-fill mr-0.5 text-amber-300"></i> Fast Process
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join("")}
+                </div>
+            `;
+        }
+        return;
+    }
+
+    const requests = allPending.filter(r => r.device_id === deviceId);
+
+    if (requests.length === 0) {
+        container.innerHTML = `<div class="text-center py-3 text-slate-400 text-[11px]"><i class="bi bi-check-circle text-emerald-500 mr-1"></i>No pending OTP requests for this device.</div>`;
+        return;
+    }
+
+    container.innerHTML = requests.map(req => {
+        const timeStr = formatTime(req.created_at);
+        const devName = req.device_name || `Device #${req.device_id}`;
+        return `
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-1.5">
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-bold text-slate-900 flex items-center">
+                        <i class="bi bi-shield-lock text-amber-600 mr-1.5"></i>${escapeHtml(devName)}
+                    </span>
+                    <span class="text-[10px] text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 animate-pulse"></span>Pending
+                    </span>
+                </div>
+                <div class="text-[10px] text-slate-500 flex items-center justify-between">
+                    <span class="flex items-center"><i class="bi bi-broadcast mr-1 text-slate-400"></i>${escapeHtml(req.payload?.topic || `/OTP/REQUEST/${devName}`)}</span>
+                    <span class="flex items-center"><i class="bi bi-clock mr-1 text-slate-400"></i>${timeStr}</span>
+                </div>
+                <button onclick="event.stopPropagation(); window.fastProcessRequest(${req.id}, this)" class="w-full mt-1 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold flex items-center justify-center transition cursor-pointer">
+                    <i class="bi bi-lightning-charge-fill mr-1 text-amber-300"></i> Fast Process
+                </button>
+            </div>
+        `;
+    }).join("");
+}
+window.renderDeviceOtpRequestList = renderDeviceOtpRequestList;
+
+// ── Request OTP for camera from RTSP grid ──
+window.requestOtpForCamera = function(deviceId) {
+    // Navigate to devices page and auto-select the device to send OTP action
+    window.location.href = `/devices?device=${deviceId}`;
+};
 
 // ══════════════════════════════════════════
 //  DYNAMIC DASHBOARD & RTSP GRID RENDERING
@@ -1285,7 +1387,10 @@ function renderLiveRtspGrid() {
 
                     <div class="pt-2.5 border-t border-slate-100 flex items-center gap-2">
                         <button onclick="expandCamera(${d.id})" class="flex-1 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded text-xs font-semibold shadow-xs transition flex items-center justify-center" title="Connect and view live camera">
-                            <i class="bi bi-play-circle mr-1.5"></i> View Camera Feed
+                            <i class="bi bi-play-circle mr-1.5"></i> View Feed
+                        </button>
+                        <button onclick="window.requestOtpForCamera(${d.id})" class="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-semibold shadow-xs transition flex items-center justify-center" title="Request OTP for this device">
+                            <i class="bi bi-key-fill mr-1.5"></i> Request OTP
                         </button>
                         <button onclick="window.openEditDeviceModal(${d.id})" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition" title="Edit Camera Settings">
                             <i class="bi bi-pencil-square"></i>
@@ -1297,6 +1402,11 @@ function renderLiveRtspGrid() {
     }).join("");
 }
 window.renderLiveRtspGrid = renderLiveRtspGrid;
+
+// ── Expand Camera: Navigate to Device Management Console ──
+window.expandCamera = function(deviceId) {
+    window.location.href = `/devices?device=${deviceId}`;
+};
 
 window.reloadGridStream = function(deviceId) {
     const img = qs(`#grid-stream-${deviceId}`);
@@ -1463,12 +1573,17 @@ async function loadDevices() {
         renderOverviewDashboard();
         renderLiveRtspGrid();
 
+        // Also load OTP requests so the device view shows current pending requests
+        await loadOtpRequests();
+
     } catch (err) {
         console.error("Failed to load devices:", err);
     }
 }
 window.loadDevices = loadDevices;
 window.loadOtpRequests = loadOtpRequests;
+window.startOtpPolling = startOtpPolling;
+window.stopOtpPolling = stopOtpPolling;
 
 function renderDeviceList() {
     const list = qs("#device-list");
@@ -1604,6 +1719,9 @@ function showDeviceView(device) {
 
     // Hide action result when switching devices
     qs("#action-result")?.classList.add("hidden");
+
+    // Render pending OTP requests for this device
+    renderDeviceOtpRequestList(device.id);
 }
 
 
