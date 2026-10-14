@@ -14,16 +14,16 @@
     <link rel="stylesheet" href="/static/style.css?v=3.0" />
 </head>
 
-<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
 
-    <!-- ── Top Header Navigation ── -->
-    {% include 'components/topbar.html' %}
+    <!-- ── Left Navigation Sidebar (Full Height) ── -->
+    {% include 'components/sidebar.html' %}
 
-    <!-- Page Body -->
-    <div class="flex flex-1 overflow-hidden">
+    <!-- Page Body: Right Area -->
+    <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        <!-- ── Left Navigation Sidebar ── -->
-        {% include 'components/sidebar.html' %}
+        <!-- ── Top Header Navigation ── -->
+        {% include 'components/topbar.html' %}
 
         <!-- Main Content -->
         <main class="flex-1 bg-[#f8fafc] overflow-y-auto p-6">

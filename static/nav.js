@@ -292,7 +292,7 @@
         var aside = qs("#app-sidebar") || qs("aside");
         if (!aside) return;
 
-        aside.className = "w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4";
+        aside.className = "w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4 h-full";
         if (aside.dataset.navRendered !== "true") {
             aside.dataset.navRendered = "true";
             aside.innerHTML = `
@@ -367,9 +367,9 @@
         var token = getToken();
         if (!token) { window.location.href = "/"; return; }
 
-        // Render common top bar and navigation sidebar immediately
-        renderCommonTopBar();
+        // Render navigation sidebar (first) and common top bar immediately
         renderCommonSidebar();
+        renderCommonTopBar();
 
         startClock();
         attachLogout();
