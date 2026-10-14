@@ -110,6 +110,103 @@ def send_otp_email(to_email: str, otp_code: str, device_name: str, otp_label: st
         return False
 
 
+def send_dual_otp_email(to_email: str, otp1: str, otp2: str, device_name: str, otp_label: str = "Dual Authorization OTP") -> bool:
+    """
+    Send both OTP codes (1st and 2nd key) to an authorized user/operator via email.
+    """
+    if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
+        logger.warning("SMTP not configured — skipping Dual OTP email")
+        return False
+
+    if not to_email or "@" not in to_email or to_email.endswith(".local"):
+        logger.warning("Invalid recipient email '%s' — skipping Dual OTP email", to_email)
+        return False
+
+    from app.utils.timezone import get_ist_now
+    current_time_str = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
+    subject = f"IP Camera Manager — {otp_label} for {device_name} - {current_time_str}"
+
+    html_body = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0a0e17; color: #e8eaed; padding: 20px; }}
+            .container {{ max-width: 480px; margin: 0 auto; background: #1a2035; border-radius: 12px; padding: 32px; border: 1px solid #2a3250; }}
+            .logo {{ text-align: center; margin-bottom: 24px; }}
+            .logo h2 {{ color: #2979ff; margin: 0; font-size: 20px; }}
+            .badge {{ display: inline-block; background: rgba(41, 121, 255, 0.15); border: 1px solid #2979ff; color: #2979ff; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; margin-bottom: 12px; }}
+            .otp-grid {{ display: flex; gap: 16px; margin: 20px 0; justify-content: center; }}
+            .otp-box {{ flex: 1; text-align: center; padding: 18px 12px; background: #0d1321; border-radius: 8px; border: 2px dashed #2a3250; }}
+            .otp-title {{ font-size: 11px; text-transform: uppercase; font-weight: 700; color: #8892a6; margin-bottom: 8px; }}
+            .otp-code {{ font-size: 28px; font-weight: 800; letter-spacing: 6px; color: #2979ff; font-family: 'Courier New', monospace; }}
+            .info {{ color: #8892a6; font-size: 14px; text-align: center; }}
+            .device-name {{ color: #ffab00; font-weight: 600; }}
+            .footer {{ text-align: center; color: #5a6480; font-size: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #2a3250; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">
+                <h2>IP Camera Manager</h2>
+            </div>
+            <div style="text-align: center;">
+                <span class="badge">{otp_label}</span>
+            </div>
+            <p class="info">Dual Authorization OTP for device <span class="device-name">{device_name}</span>:</p>
+            <table width="100%" cellpadding="0" cellspacing="10" style="margin: 20px 0;">
+                <tr>
+                    <td width="50%" align="center" style="background: #0d1321; border-radius: 8px; border: 2px dashed #2a3250; padding: 16px;">
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #8892a6; margin-bottom: 6px;">1st Key OTP</div>
+                        <div style="font-size: 26px; font-weight: 800; letter-spacing: 4px; color: #2979ff; font-family: 'Courier New', monospace;">{otp1}</div>
+                    </td>
+                    <td width="50%" align="center" style="background: #0d1321; border-radius: 8px; border: 2px dashed #2a3250; padding: 16px;">
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #8892a6; margin-bottom: 6px;">2nd Key OTP</div>
+                        <div style="font-size: 26px; font-weight: 800; letter-spacing: 4px; color: #00e676; font-family: 'Courier New', monospace;">{otp2}</div>
+                    </td>
+                </tr>
+            </table>
+            <p class="info">Dispatched to: <strong>{to_email}</strong></p>
+            <p class="info">Both keys valid for <strong>5 minutes</strong>. Dispatched to hardware via MQTT.</p>
+            <div class="footer">
+                IP Camera Manager — Industrial Surveillance Platform<br>
+                This is an automated message. Do not reply.
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.SMTP_FROM_EMAIL
+    msg["To"] = to_email
+
+    text_body = f"[{otp_label}]\nDevice: {device_name}\n1st Key OTP: {otp1}\n2nd Key OTP: {otp2}\nRecipient: {to_email}\nValid for 5 minutes."
+    msg.attach(MIMEText(text_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        if settings.SMTP_USE_TLS:
+            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10)
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+        else:
+            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10)
+
+        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+        server.sendmail(settings.SMTP_FROM_EMAIL, to_email, msg.as_string())
+        server.quit()
+        logger.info("%s email successfully sent to %s for device '%s'", otp_label, to_email, device_name)
+        return True
+
+    except Exception as e:
+        logger.error("Failed to send %s email to %s: %s", otp_label, to_email, e)
+        return False
+
+
 def send_branch_user_email(to_email: str, username: str, branch_name: str, action: str = "assigned to") -> bool:
     """
     Send an email notification to a branch user when created or updated.

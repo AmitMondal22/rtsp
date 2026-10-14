@@ -47,3 +47,9 @@ def list_users(
     if current_user.role == "bank_admin":
         return db.query(User).filter(User.bank_id == current_user.bank_id).all()
     return db.query(User).all()
+
+
+# Secondary router for /api/auth compatibility
+auth_router = APIRouter(prefix="/api/auth", tags=["Auth"])
+auth_router.add_api_route("/login", login, methods=["POST"], response_model=Token)
+auth_router.add_api_route("/me", get_me, methods=["GET"], response_model=UserOut)

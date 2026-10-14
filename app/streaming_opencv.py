@@ -50,45 +50,42 @@ class OpenCVCamera:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"cam-{id(self)}")
 
     def _open_sync(self) -> bool:
-        """Open the RTSP stream synchronously with thread safety and ultra-fast FFmpeg flags."""
-        with _capture_lock:
-            self._release_sync_locked()
+        """Open the RTSP stream synchronously with fast non-blocking timeout."""
+        if not self.rtsp_url or not self.rtsp_url.strip():
+            return False
 
-            t_str = self.transport or "tcp"
+        self._release_sync()
+
+        t_str = self.transport or "tcp"
+        with _capture_lock:
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
                 f"rtsp_transport;{t_str}|"
                 "fflags;nobuffer|flags;low_delay|max_delay;500000|"
-                "probesize;500000|analyzeduration;500000|reorder_queue_size;0|stimeout;3000000"
+                "probesize;200000|analyzeduration;200000|reorder_queue_size;0|stimeout;2000000"
             )
 
-            # Retry up to 3 times with brief pause for socket release
-            for attempt in range(1, 4):
-                try:
-                    self._cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
-                except Exception as cap_err:
-                    logger.warning("VideoCapture exception on attempt %d: %s", attempt, cap_err)
-                    self._cap = None
+        try:
+            self._cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+        except Exception as cap_err:
+            logger.warning("VideoCapture exception: %s", cap_err)
+            self._cap = None
 
-                if self._cap is not None:
-                    try:
-                        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # 1-frame buffer → minimal latency
-                    except Exception:
-                        pass
-                    if self._cap.isOpened():
-                        logger.info("Camera opened: %s (attempt %d)", self.rtsp_url, attempt)
-                        return True
+        if self._cap is not None:
+            try:
+                self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # 1-frame buffer → minimal latency
+            except Exception:
+                pass
+            if self._cap.isOpened():
+                logger.info("Camera opened: %s", self.rtsp_url)
+                return True
 
-                logger.warning("Attempt %d failed: %s", attempt, self.rtsp_url)
-                if self._cap:
-                    try:
-                        self._cap.release()
-                    except Exception:
-                        pass
-                    self._cap = None
-                time.sleep(0.3)
-
-            logger.error("Failed to open RTSP after 3 retries: %s", self.rtsp_url)
-            return False
+        if self._cap:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+            self._cap = None
+        return False
 
     def _read_frame_sync(self) -> Optional[bytes]:
         """Read one frame synchronously. Returns JPEG bytes or None on failure."""
@@ -97,7 +94,6 @@ class OpenCVCamera:
         try:
             ret, frame = self._cap.read()
             if not ret or frame is None:
-                logger.warning("Frame read failed")
                 return None
 
             # Linear resize — fastest interpolation mode
@@ -108,8 +104,7 @@ class OpenCVCamera:
             if not ret:
                 return None
             return jpeg_data.tobytes()
-        except Exception as e:
-            logger.warning("Frame read exception: %s", e)
+        except Exception:
             return None
 
     def _release_sync_locked(self) -> None:
@@ -214,23 +209,42 @@ class CameraBroadcaster:
         self._camera = OpenCVCamera(self.rtsp_url, transport=self.transport)
         opened = await self._camera.open()
         if not opened:
-            logger.warning("[Broadcaster %d] Failed to open RTSP stream", self.device_id)
+            logger.info("[Broadcaster %d] RTSP stream offline or unreachable: %s", self.device_id, self.rtsp_url)
             for ws in list(self._websockets):
                 try:
-                    await ws.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream"}))
+                    await ws.send_text(json.dumps({"error": "Failed to connect to RTSP camera stream", "offline": True}))
                 except Exception:
                     pass
+            for q in list(self._subscribers):
+                try:
+                    q.put_nowait(None)
+                except Exception:
+                    pass
+            if self._camera:
+                await self._camera.release_async()
+                self._camera = None
             self._task = None
             return
 
+        failed_reads = 0
         try:
             while self._websockets or self._subscribers:
                 deadline = asyncio.get_event_loop().time() + FRAME_DELAY
                 frame_bytes = await self._camera.read_frame()
                 if frame_bytes is None:
+                    failed_reads += 1
+                    if failed_reads >= 20:
+                        logger.info("[Broadcaster %d] Stream interrupted (no frames for 2s)", self.device_id)
+                        for q in list(self._subscribers):
+                            try:
+                                q.put_nowait(None)
+                            except Exception:
+                                pass
+                        break
                     await asyncio.sleep(0.1)
                     continue
 
+                failed_reads = 0
                 self._last_frame = frame_bytes
 
                 # Broadcast to WebSockets
@@ -268,11 +282,45 @@ class CameraBroadcaster:
         except Exception as e:
             logger.warning("[Broadcaster %d] Capture loop exception: %s", self.device_id, e)
         finally:
-            logger.info("[Broadcaster %d] Stopping single RTSP capture loop", self.device_id)
+            logger.info("[Broadcaster %d] Stopping RTSP capture loop", self.device_id)
+            for q in list(self._subscribers):
+                try:
+                    q.put_nowait(None)
+                except Exception:
+                    pass
             if self._camera:
                 await self._camera.release_async()
                 self._camera = None
             self._task = None
+
+
+_offline_frame_cache: dict[str, bytes] = {}
+
+
+def get_offline_jpeg_frame(camera_name: str = "Camera") -> bytes:
+    """Generate a clean, high-performance offline JPEG image for disconnected cameras."""
+    clean_name = str(camera_name or "Camera").strip()
+    if clean_name in _offline_frame_cache:
+        return _offline_frame_cache[clean_name]
+
+    try:
+        import numpy as np
+        img = np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
+        img[:] = (20, 18, 15)  # Dark background (BGR)
+
+        cv2.rectangle(img, (2, 2), (FRAME_WIDTH - 2, FRAME_HEIGHT - 2), (45, 40, 35), 1)
+
+        display_name = clean_name[:28]
+        cv2.putText(img, display_name, (24, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (220, 220, 220), 2, cv2.LINE_AA)
+        cv2.putText(img, "STREAM OFFLINE / RECONNECTING", (24, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (60, 140, 245), 2, cv2.LINE_AA)
+        cv2.putText(img, "Standby - Device not transmitting RTSP", (24, 225), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (120, 120, 120), 1, cv2.LINE_AA)
+
+        ret, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        data = jpeg.tobytes() if ret else b""
+        _offline_frame_cache[clean_name] = data
+        return data
+    except Exception:
+        return b""
 
 
 class CameraBroadcasterHub:

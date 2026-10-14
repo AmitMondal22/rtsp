@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Analytics & Security Reports — ANG Smart Access" />
+    <title>Reports — ANG Smart Access</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="/static/style.css?v=6.0" />
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
+
+    <header class="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between shrink-0 select-none z-30">
+        <div class="flex items-center space-x-3">
+            <span class="text-xs text-slate-500 font-medium">Organization</span>
+            <div class="relative">
+                <select id="organization-select" class="appearance-none bg-slate-50 border border-slate-200 rounded-md pl-3 pr-8 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-xs">
+                    <option value="">Default Organization</option>
+                </select>
+                <i class="bi bi-chevron-down absolute right-2.5 top-2.5 text-[10px] text-slate-400 pointer-events-none"></i>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-4">
+            <div class="hidden sm:flex flex-col text-right leading-none pr-3 border-r border-slate-200 font-mono text-[11px]">
+                <span id="nav-clock" class="text-slate-800 font-bold">--:--:--</span>
+                <span id="nav-date" class="text-slate-400 text-[10px] mt-0.5">----/--/--</span>
+            </div>
+            <span id="user-role-badge" class="bg-sky-100 text-sky-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-sky-200">USER</span>
+            <span id="user-display-email" class="text-xs text-slate-600 font-medium truncate max-w-[200px]">Loading...</span>
+            <button id="logout-btn" class="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center transition cursor-pointer px-2.5 py-1 rounded-md hover:bg-slate-100">
+                <i class="bi bi-box-arrow-right mr-1.5 text-slate-500"></i> Sign out
+            </button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        <aside class="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4">
+            <div>
+                <div class="flex items-center space-x-3 mb-5 px-2">
+                    <div class="w-9 h-9 rounded-lg bg-sky-600 flex items-center justify-center text-white text-lg shadow-xs">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-sm font-bold text-slate-900 tracking-tight leading-none">ANG Smart Access</h1>
+                        <span class="text-[11px] text-slate-400 font-medium">Techavo Systems</span>
+                    </div>
+                </div>
+
+                <nav class="space-y-0.5">
+                    <div class="nav-section-title">Operations</div>
+                    <a href="/dashboard" id="nav-overview" class="nav-item">
+                        <i class="bi bi-grid-fill"></i> Overview Dashboard
+                    </a>
+                    <a href="/rtsp" id="nav-rtsp" class="nav-item">
+                        <i class="bi bi-camera-video-fill"></i> Live RTSP Monitoring
+                    </a>
+                    <a href="/requests" id="nav-requests" class="nav-item">
+                        <i class="bi bi-envelope-paper-fill"></i> Pending Access Requests
+                    </a>
+                    <a href="/alerts" id="nav-alerts" class="nav-item">
+                        <i class="bi bi-shield-exclamation"></i> Security Alerts
+                    </a>
+                    <a href="/reports" id="nav-reports" class="nav-item active">
+                        <i class="bi bi-bar-chart-fill"></i> Reports
+                    </a>
+
+                    <div class="nav-section-title">Infrastructure</div>
+                    <a href="/devices" id="nav-devices" class="nav-item">
+                        <i class="bi bi-cpu-fill"></i> Device Management
+                    </a>
+
+                    <div class="nav-section-title">OTP Management</div>
+                    <a href="/online-otp" id="nav-online-otp" class="nav-item">
+                        <i class="bi bi-key-fill"></i> Online OTP Requests
+                    </a>
+                    <a href="/offline-otp" id="nav-offline-otp" class="nav-item">
+                        <i class="bi bi-database-fill"></i> Bulk Offline OTP Database
+                    </a>
+
+                    <div class="nav-section-title">Administration</div>
+                    <a href="/banks" id="nav-banks" class="nav-item">
+                        <i class="bi bi-bank"></i> Bank Management
+                    </a>
+                    <a href="/branches" id="nav-branches" class="nav-item">
+                        <i class="bi bi-diagram-3-fill"></i> Branch Management
+                    </a>
+                    <a href="/users" id="nav-users" class="nav-item">
+                        <i class="bi bi-people-fill"></i> User Management
+                    </a>
+                    <a href="/logs" id="nav-logs" class="nav-item">
+                        <i class="bi bi-journal-text"></i> Event Logs & Audit
+                    </a>
+                </nav>
+            </div>
+
+            <div class="pt-3 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <span>ANG System v2.0</span>
+                <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Connected</span>
+            </div>
+        </aside>
+
+        <main class="flex-1 bg-[#f8fafc] overflow-y-auto p-6 flex flex-col min-w-0">
+            <section class="flex flex-col space-y-6 max-w-7xl">
+                <!-- Page Header with Export Controls (Exact match to screenshot) -->
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Reports</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Computed live from your organization's data.</p>
+                    </div>
+
+                    <div class="flex items-center space-x-2.5">
+                        <button onclick="downloadExport('requests')" class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-xs transition flex items-center cursor-pointer">
+                            <i class="bi bi-download mr-1.5 text-slate-400"></i> Requests
+                        </button>
+                        <button onclick="downloadExport('alerts')" class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-xs transition flex items-center cursor-pointer">
+                            <i class="bi bi-download mr-1.5 text-slate-400"></i> Alerts
+                        </button>
+                        <button onclick="downloadExport('devices')" class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-xs transition flex items-center cursor-pointer">
+                            <i class="bi bi-download mr-1.5 text-slate-400"></i> Devices
+                        </button>
+                        <button onclick="loadReportsData()" class="p-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs transition cursor-pointer" title="Refresh Live Data">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4 Top KPI Cards (Exact match to screenshot) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- TOTAL REQUESTS -->
+                    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Requests</div>
+                        <div class="mt-2 text-3xl font-extrabold text-slate-900" id="kpi-total-requests">2</div>
+                    </div>
+
+                    <!-- APPROVAL RATE -->
+                    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Approval Rate</div>
+                        <div class="mt-2 text-3xl font-extrabold text-emerald-600" id="kpi-approval-rate">0%</div>
+                    </div>
+
+                    <!-- AVG TIME TO OTP -->
+                    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Avg Time to OTP</div>
+                        <div class="mt-2 text-3xl font-extrabold text-sky-600" id="kpi-avg-time">—</div>
+                    </div>
+
+                    <!-- FLEET AVAILABILITY -->
+                    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Fleet Availability</div>
+                        <div class="mt-2 text-3xl font-extrabold text-slate-900" id="kpi-fleet-avail">75%</div>
+                    </div>
+                </div>
+
+                <!-- Middle Charts Row (Exact match to screenshot) -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                    <!-- Last 7 days Bar Chart -->
+                    <div class="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-bold text-slate-900">Last 7 days</h3>
+                            <span class="text-[11px] text-slate-400 font-medium">Activity trends</span>
+                        </div>
+                        <div class="relative w-full h-[240px]">
+                            <canvas id="last7DaysChart"></canvas>
+                        </div>
+                        <!-- Legend below chart -->
+                        <div class="flex items-center justify-center space-x-5 mt-3 pt-3 border-t border-slate-100 text-xs">
+                            <span class="flex items-center text-slate-700 font-medium">
+                                <span class="w-3 h-3 bg-[#2563eb] rounded-xs mr-1.5 inline-block"></span> requests
+                            </span>
+                            <span class="flex items-center text-slate-700 font-medium">
+                                <span class="w-3 h-3 bg-[#dc2626] rounded-xs mr-1.5 inline-block"></span> alerts
+                            </span>
+                            <span class="flex items-center text-slate-700 font-medium">
+                                <span class="w-3 h-3 bg-[#475569] rounded-xs mr-1.5 inline-block"></span> events
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Request outcomes Donut Chart -->
+                    <div class="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-bold text-slate-900">Request outcomes</h3>
+                        </div>
+                        <div class="relative w-full h-[240px] flex items-center justify-center">
+                            <canvas id="requestOutcomesChart"></canvas>
+                        </div>
+                        <div class="flex items-center justify-center space-x-4 mt-3 pt-3 border-t border-slate-100 text-xs">
+                            <span class="flex items-center text-slate-700 font-medium">
+                                <span class="w-2.5 h-2.5 bg-[#0284c7] rounded-full mr-1.5 inline-block"></span> pending
+                            </span>
+                            <span id="approved-legend-item" class="flex items-center text-slate-700 font-medium hidden">
+                                <span class="w-2.5 h-2.5 bg-[#059669] rounded-full mr-1.5 inline-block"></span> approved
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Row: Alerts by severity & Per-device summary (Exact match to screenshot) -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                    <!-- Alerts by severity Horizontal Bar Chart -->
+                    <div class="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-bold text-slate-900">Alerts by severity</h3>
+                        </div>
+                        <div class="relative w-full h-[220px]">
+                            <canvas id="alertsBySeverityChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Per-device summary Table -->
+                    <div class="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-bold text-slate-900">Per-device summary</h3>
+                            <span class="text-[11px] text-slate-400 font-medium">Fleet breakdown</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse text-xs">
+                                <thead>
+                                    <tr class="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                                        <th class="py-2.5 px-3">Device</th>
+                                        <th class="py-2.5 px-3 text-center">Requests</th>
+                                        <th class="py-2.5 px-3 text-center">Alerts</th>
+                                        <th class="py-2.5 px-3 text-right">Online</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="per-device-table-body" class="divide-y divide-slate-100">
+                                    <tr>
+                                        <td colspan="4" class="text-center py-6 text-slate-400 text-xs">Loading device statistics...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+    <script src="/static/nav.js?v=3.0"></script>
+    <script src="/static/app.js?v=19.0"></script>
+
+    <script>
+        let last7ChartInstance = null;
+        let outcomesChartInstance = null;
+        let severityChartInstance = null;
+
+        async function loadReportsData() {
+            try {
+                const res = await api("/api/reports/summary");
+                if (res && res.success) {
+                    // Update KPIs
+                    document.getElementById("kpi-total-requests").textContent = res.kpis.total_requests;
+                    document.getElementById("kpi-approval-rate").textContent = res.kpis.approval_rate;
+                    document.getElementById("kpi-avg-time").textContent = res.kpis.avg_time_to_otp;
+                    document.getElementById("kpi-fleet-avail").textContent = res.kpis.fleet_availability;
+
+                    // Render Last 7 Days Chart
+                    renderLast7DaysChart(res.last_7_days);
+
+                    // Render Request Outcomes Chart
+                    renderRequestOutcomesChart(res.request_outcomes);
+
+                    // Render Alerts by Severity Chart
+                    renderAlertsBySeverityChart(res.alerts_by_severity);
+
+                    // Render Per-device Summary Table
+                    renderPerDeviceTable(res.per_device_summary);
+                }
+            } catch (err) {
+                console.error("Error loading reports data:", err);
+            }
+        }
+
+        function renderLast7DaysChart(data) {
+            const ctx = document.getElementById("last7DaysChart");
+            if (!ctx) return;
+            if (last7ChartInstance) last7ChartInstance.destroy();
+
+            last7ChartInstance = new Chart(ctx, {
+                type: "bar",
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        {
+                            label: "requests",
+                            data: data.requests,
+                            backgroundColor: "#2563eb",
+                            borderRadius: 2,
+                            barPercentage: 0.6,
+                            categoryPercentage: 0.8,
+                        },
+                        {
+                            label: "alerts",
+                            data: data.alerts,
+                            backgroundColor: "#dc2626",
+                            borderRadius: 2,
+                            barPercentage: 0.6,
+                            categoryPercentage: 0.8,
+                        },
+                        {
+                            label: "events",
+                            data: data.events,
+                            backgroundColor: "#475569",
+                            borderRadius: 2,
+                            barPercentage: 0.6,
+                            categoryPercentage: 0.8,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: "#1e293b",
+                            padding: 8,
+                            titleFont: { size: 11, family: "Inter" },
+                            bodyFont: { size: 11, family: "Inter" },
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                color: "#64748b",
+                                font: { size: 10, family: "JetBrains Mono" }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            border: { dash: [3, 3] },
+                            grid: { color: "#f1f5f9" },
+                            ticks: {
+                                color: "#94a3b8",
+                                font: { size: 10, family: "JetBrains Mono" },
+                                stepSize: 5
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderRequestOutcomesChart(data) {
+            const ctx = document.getElementById("requestOutcomesChart");
+            if (!ctx) return;
+            if (outcomesChartInstance) outcomesChartInstance.destroy();
+
+            const isApprovedPresent = data.labels.includes("approved");
+            const approvedLegend = document.getElementById("approved-legend-item");
+            if (approvedLegend) {
+                approvedLegend.classList.toggle("hidden", !isApprovedPresent);
+            }
+
+            outcomesChartInstance = new Chart(ctx, {
+                type: "doughnut",
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        data: data.data,
+                        backgroundColor: ["#0284c7", "#059669"],
+                        hoverBackgroundColor: ["#0369a1", "#047857"],
+                        borderWidth: 2,
+                        borderColor: "#ffffff",
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: "68%",
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: "#1e293b",
+                            padding: 8,
+                            titleFont: { size: 11 },
+                            bodyFont: { size: 11 },
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderAlertsBySeverityChart(data) {
+            const ctx = document.getElementById("alertsBySeverityChart");
+            if (!ctx) return;
+            if (severityChartInstance) severityChartInstance.destroy();
+
+            severityChartInstance = new Chart(ctx, {
+                type: "bar",
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        data: data.data,
+                        backgroundColor: "#dc2626",
+                        borderRadius: 2,
+                        barThickness: 24,
+                    }]
+                },
+                options: {
+                    indexAxis: "y",
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: "#1e293b",
+                            padding: 8,
+                            titleFont: { size: 11 },
+                            bodyFont: { size: 11 },
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: false,
+                            beginAtZero: true,
+                        },
+                        y: {
+                            grid: { display: false },
+                            ticks: {
+                                color: "#64748b",
+                                font: { size: 10, family: "Inter" }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderPerDeviceTable(rows) {
+            const tbody = document.getElementById("per-device-table-body");
+            if (!tbody) return;
+
+            if (!rows || rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-slate-400">No devices monitored.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = rows.map(r => `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="py-2.5 px-3 font-semibold text-slate-900">${escapeHtml(r.device)}</td>
+                    <td class="py-2.5 px-3 text-center text-slate-700 font-mono">${r.requests}</td>
+                    <td class="py-2.5 px-3 text-center text-slate-700 font-mono">${r.alerts}</td>
+                    <td class="py-2.5 px-3 text-right">
+                        <span class="font-medium ${r.online === 'yes' ? 'text-slate-800' : 'text-rose-600'}">
+                            ${r.online}
+                        </span>
+                    </td>
+                </tr>
+            `).join("");
+        }
+
+        function downloadExport(type) {
+            const token = localStorage.getItem('token');
+            const url = `/api/reports/export/${encodeURIComponent(type)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+            window.location.href = url;
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (typeof window.initHeaderClock === 'function') window.initHeaderClock();
+            if (typeof window.checkUserRoleAndPermissions === 'function') window.checkUserRoleAndPermissions();
+            if (typeof window.loadOrganizationsDropdown === 'function') await window.loadOrganizationsDropdown();
+            await loadReportsData();
+
+            // Auto-refresh reports every 15 seconds
+            setInterval(async () => {
+                if (document.hidden) return;
+                await loadReportsData();
+            }, 15000);
+        });
+    </script>
+</body>
+</html>

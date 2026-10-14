@@ -167,71 +167,32 @@ function showToast(message, type = "success") {
     }, 3500);
 }
 
-// Clock
-function updateTopbarClock() {
-    const clockEl = qs("#nav-clock");
-    const dateEl = qs("#nav-date");
-    if (!clockEl || !dateEl) return;
-
-    const now = new Date();
-    clockEl.textContent = now.toLocaleTimeString();
-    dateEl.textContent = now.toISOString().split("T")[0].replace(/-/g, "/");
-}
-setInterval(updateTopbarClock, 1000);
-updateTopbarClock();
-
 // Initialize User
+// nav.js handles auth check, header clock, logout, dropdown, and role-based sidebar visibility.
+// We sync state.user from window._navUser set by nav.js.
 async function initUser() {
-    try {
-        state.user = await api("/api/users/me");
-        qs("#user-dropdown-username").textContent = state.user.username;
-        qs("#user-dropdown-role").textContent = state.user.role.toUpperCase();
-
-        const navBanks = qs("#nav-banks-link");
-        const navUsers = qs("#nav-users-link");
-        const navBranches = qs("#nav-branches-link");
-
-        // Always show branch menu item
-        if (navBranches) navBranches.classList.remove("hidden");
-
-        if (state.user.role === "super_admin" || state.user.role === "admin") {
-            if (navBanks) navBanks.classList.remove("hidden");
-            if (navUsers) navUsers.classList.remove("hidden");
-        } else if (state.user.role === "bank_admin") {
-            if (navBanks) navBanks.classList.add("hidden");
-            if (navUsers) navUsers.classList.remove("hidden");
-        } else {
-            if (navBanks) navBanks.classList.add("hidden");
-            if (navUsers) navUsers.classList.add("hidden");
-            const addBranchBtn = qs("#open-add-branch-modal");
-            if (addBranchBtn) addBranchBtn.classList.add("hidden");
-        }
-
-        await loadUsersForDropdowns();
-        await loadBanks();
-        await loadBranches();
-    } catch (err) {
-        console.error("User init failed:", err);
-        localStorage.removeItem("token");
-        window.location.href = "/login";
+    for (let i = 0; i < 30; i++) {
+        if (window._navUser) break;
+        await new Promise(r => setTimeout(r, 100));
     }
-}
 
-// Profile dropdown
-const userMenuBtn = qs("#user-menu-btn");
-const userDropdownMenu = qs("#user-dropdown-menu");
-if (userMenuBtn && userDropdownMenu) {
-    userMenuBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        userDropdownMenu.classList.toggle("hidden");
-    });
-    document.addEventListener("click", () => userDropdownMenu.classList.add("hidden"));
-}
+    if (window._navUser) {
+        state.user = window._navUser;
+    } else {
+        try {
+            state.user = await api("/api/users/me");
+        } catch (err) {
+            console.error("User init failed:", err);
+            localStorage.removeItem("token");
+            window.location.href = "/";
+            return;
+        }
+    }
 
-qs("#logout-btn")?.addEventListener("click", () => {
-    localStorage.removeItem("token");
-    window.location.href = "/login";
-});
+    await loadUsersForDropdowns();
+    await loadBanks();
+    await loadBranches();
+}
 
 // Load Users
 async function loadUsersForDropdowns() {
@@ -315,8 +276,8 @@ function renderBranchesTable() {
 
     tbody.innerHTML = filtered.map(b => {
         const statusBadge = b.is_active
-            ? `<span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold uppercase">Active</span>`
-            : `<span class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-[10px] font-bold uppercase">Inactive</span>`;
+            ? `<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold uppercase">Active</span>`
+            : `<span class="px-2 py-0.5 bg-rose-100 text-rose-700 border border-rose-200 rounded text-[10px] font-bold uppercase">Inactive</span>`;
 
         const u1 = b.user1_name || "—";
         const u2 = b.user2_name || "—";
@@ -326,22 +287,22 @@ function renderBranchesTable() {
         const otp2User = b.otp2_user_name || u2;
 
         const otp1Badge = (b.enable_otp1 !== false)
-            ? `<span class="block text-emerald-400 font-semibold"><i class="bi bi-check-circle-fill text-[10px] mr-1"></i>1st OTP (${escapeHtml(otp1User)})</span>`
-            : `<span class="block text-brand-muted line-through"><i class="bi bi-x-circle text-[10px] mr-1"></i>1st OTP (Disabled)</span>`;
+            ? `<span class="block text-emerald-700 font-semibold"><i class="bi bi-check-circle-fill text-[10px] mr-1 text-emerald-600"></i>1st OTP (${escapeHtml(otp1User)})</span>`
+            : `<span class="block text-slate-400 line-through"><i class="bi bi-x-circle text-[10px] mr-1"></i>1st OTP (Disabled)</span>`;
 
         const otp2Badge = (b.enable_otp2 !== false)
-            ? `<span class="block text-brand-blue font-semibold"><i class="bi bi-check-circle-fill text-[10px] mr-1"></i>2nd OTP (${escapeHtml(otp2User)})</span>`
-            : `<span class="block text-brand-muted line-through"><i class="bi bi-x-circle text-[10px] mr-1"></i>2nd OTP (Disabled)</span>`;
+            ? `<span class="block text-sky-700 font-semibold"><i class="bi bi-check-circle-fill text-[10px] mr-1 text-sky-600"></i>2nd OTP (${escapeHtml(otp2User)})</span>`
+            : `<span class="block text-slate-400 line-through"><i class="bi bi-x-circle text-[10px] mr-1"></i>2nd OTP (Disabled)</span>`;
 
         return `
-            <tr class="hover:bg-brand-border/20 transition">
-                <td class="py-3 pr-3 font-semibold text-brand-purple">${b.id}</td>
-                <td class="py-3 pr-3 font-medium text-white">${escapeHtml(b.name)}</td>
-                <td class="py-3 pr-3 text-slate-300 font-semibold">${escapeHtml(b.bank_name || "—")}</td>
+            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <td class="py-3 pr-3 font-bold text-purple-600">${b.id}</td>
+                <td class="py-3 pr-3 font-semibold text-slate-900">${escapeHtml(b.name)}</td>
+                <td class="py-3 pr-3 text-slate-600 font-medium">${escapeHtml(b.bank_name || "—")}</td>
                 <td class="py-3 pr-3">${statusBadge}</td>
-                <td class="py-3 pr-3 text-xs text-slate-300">
-                    <span class="block text-emerald-300 font-medium">1. ${escapeHtml(u1)}</span>
-                    <span class="block text-brand-blue font-medium">2. ${escapeHtml(u2)}</span>
+                <td class="py-3 pr-3 text-xs text-slate-700">
+                    <span class="block text-slate-800 font-medium">1. ${escapeHtml(u1)}</span>
+                    <span class="block text-slate-600 font-medium">2. ${escapeHtml(u2)}</span>
                     <span class="block text-slate-400 font-medium">3. ${escapeHtml(u3)}</span>
                 </td>
                 <td class="py-3 pr-3 text-xs">
@@ -349,10 +310,10 @@ function renderBranchesTable() {
                     ${otp2Badge}
                 </td>
                 <td class="py-3 text-right space-x-2">
-                    <button class="px-2.5 py-1 bg-brand-purple/20 hover:bg-brand-purple/30 text-brand-purple rounded text-xs transition" onclick="openEditBranchModal(${b.id})">
+                    <button class="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-md text-xs font-semibold transition cursor-pointer" onclick="openEditBranchModal(${b.id})">
                         <i class="bi bi-pencil-fill mr-1"></i> Edit
                     </button>
-                    <button class="px-2.5 py-1 bg-brand-danger/20 hover:bg-brand-danger/30 text-brand-danger rounded text-xs transition" onclick="deleteBranch(${b.id}, '${escapeHtml(b.name).replace(/'/g, "\\'")}')">
+                    <button class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md text-xs font-semibold transition cursor-pointer" onclick="deleteBranch(${b.id}, '${escapeHtml(b.name).replace(/'/g, "\\'")}')">
                         <i class="bi bi-trash-fill mr-1"></i> Delete
                     </button>
                 </td>

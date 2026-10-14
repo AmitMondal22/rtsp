@@ -73,52 +73,31 @@ setInterval(updateTopbarClock, 1000);
 updateTopbarClock();
 
 // Load Logged-in User
+// nav.js handles auth, logout, dropdown, and nav visibility.
+// We sync state.user from window._navUser set by nav.js.
 async function initUser() {
-    try {
-        state.user = await api("/api/users/me");
-        qs("#user-dropdown-username").textContent = state.user.username;
-        qs("#user-dropdown-role").textContent = state.user.role.toUpperCase();
+    // Wait briefly for nav.js to complete async auth
+    for (let i = 0; i < 30; i++) {
+        if (window._navUser) break;
+        await new Promise(r => setTimeout(r, 100));
+    }
 
-        if (state.user.role !== "super_admin" && state.user.role !== "admin") {
-            window.location.href = "/dashboard";
+    if (window._navUser) {
+        state.user = window._navUser;
+    } else {
+        try {
+            state.user = await api("/api/users/me");
+        } catch (err) {
+            console.error("User init failed:", err);
+            localStorage.removeItem("token");
+            window.location.href = "/";
             return;
         }
-
-        const navUsers = qs("#nav-users-link");
-        const navBranches = qs("#nav-branches-link");
-        if (navUsers) navUsers.classList.remove("hidden");
-        if (navBranches) navBranches.classList.remove("hidden");
-
-        await loadUsersForDropdowns();
-        await loadBanks();
-        await loadBranches();
-    } catch (err) {
-        console.error("User init failed:", err);
-        localStorage.removeItem("token");
-        window.location.href = "/login";
     }
-}
 
-// User Profile Dropdown Toggle
-const userMenuBtn = qs("#user-menu-btn");
-const userDropdownMenu = qs("#user-dropdown-menu");
-if (userMenuBtn && userDropdownMenu) {
-    userMenuBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        userDropdownMenu.classList.toggle("hidden");
-    });
-    document.addEventListener("click", () => {
-        userDropdownMenu.classList.add("hidden");
-    });
-}
-
-// Logout
-const logoutBtn = qs("#logout-btn");
-if (logoutBtn) {
-    logoutBtn.addEventListener("click", () => {
-        localStorage.removeItem("token");
-        window.location.href = "/login";
-    });
+    await loadUsersForDropdowns();
+    await loadBanks();
+    await loadBranches();
 }
 
 // Load Users for dropdown selection
@@ -179,20 +158,20 @@ async function loadBanks() {
 
         tbody.innerHTML = banks.map(b => {
             const adminDisplay = b.admin_username
-                ? `<span class="block font-semibold text-white">${escapeHtml(b.admin_username)}</span><span class="block text-brand-muted text-xs">${escapeHtml(b.admin_email || '')}</span>`
-                : `<span class="text-brand-muted text-xs">—</span>`;
+                ? `<span class="block font-semibold text-slate-800">${escapeHtml(b.admin_username)}</span><span class="block text-slate-400 text-xs">${escapeHtml(b.admin_email || '')}</span>`
+                : `<span class="text-slate-400 text-xs">—</span>`;
 
             return `
-                <tr class="hover:bg-brand-border/20 transition">
-                    <td class="py-3 pr-4 font-semibold text-brand-blue">${b.id}</td>
-                    <td class="py-3 pr-4 font-medium text-white">${escapeHtml(b.name)}</td>
+                <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                    <td class="py-3 pr-4 font-bold text-sky-600">${b.id}</td>
+                    <td class="py-3 pr-4 font-semibold text-slate-900">${escapeHtml(b.name)}</td>
                     <td class="py-3 pr-4 text-xs">${adminDisplay}</td>
-                    <td class="py-3 pr-4 text-slate-400 font-mono text-xs">${new Date(b.created_at).toLocaleString()}</td>
+                    <td class="py-3 pr-4 text-slate-500 font-mono text-xs">${new Date(b.created_at).toLocaleString()}</td>
                     <td class="py-3 text-right space-x-2">
-                        <button class="px-2.5 py-1 bg-brand-blue/20 hover:bg-brand-blue/30 text-brand-blue rounded text-xs transition" onclick="openEditBankModal(${b.id})">
+                        <button class="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-md text-xs font-semibold transition cursor-pointer" onclick="openEditBankModal(${b.id})">
                             <i class="bi bi-pencil-fill mr-1"></i> Edit
                         </button>
-                        <button class="px-2.5 py-1 bg-brand-danger/20 hover:bg-brand-danger/30 text-brand-danger rounded text-xs transition" onclick="deleteBank(${b.id}, '${escapeHtml(b.name).replace(/'/g, "\\'")}')">
+                        <button class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md text-xs font-semibold transition cursor-pointer" onclick="deleteBank(${b.id}, '${escapeHtml(b.name).replace(/'/g, "\\'")}')">
                             <i class="bi bi-trash-fill mr-1"></i> Delete
                         </button>
                     </td>

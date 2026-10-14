@@ -1,7 +1,10 @@
 import random
 import datetime
 import json
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+
+_bg_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="bg-otp-send")
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -119,19 +122,27 @@ def generate_otp_service(db: Session, device_id: int, user: User) -> dict:
 
     if existing_otp:
         code = existing_otp.code
-        email_sent = False
-        if getattr(device, "enable_email", True) is not False:
-            email_sent = send_otp_email(target_user.email, code, device.name, otp_label="Device Access OTP")
+        email_sent = bool(getattr(device, "enable_email", True) is not False and target_user.email)
+        if email_sent:
+            _bg_executor.submit(send_otp_email, target_user.email, code, device.name, "Device Access OTP")
         
-        whatsapp_sent = False
-        if getattr(device, "enable_whatsapp", True) is not False and wa_number:
-            whatsapp_sent = send_whatsapp_otp(wa_number, code, device.name, otp_label="Device Access OTP")
+        # Also send copy to currently logged in user
+        if user and user.email and user.email != target_user.email:
+            _bg_executor.submit(send_otp_email, user.email, code, device.name, "Device Access OTP (Operator Copy)")
+
+        whatsapp_sent = bool(getattr(device, "enable_whatsapp", True) is not False and wa_number)
+        if whatsapp_sent:
+            _bg_executor.submit(send_whatsapp_otp, wa_number, code, device.name, "Device Access OTP")
+
+        # Always publish to MQTT - email send or not, device MQTT always send!
+        from app.services.mqtt_service import publish_otp_to_device
+        mqtt_sent = publish_otp_to_device(device.name, code, code)
 
         # Log to ThreadMessage for single OTP retrieval/reuse
         new_msg = ThreadMessage(
             device_id=device_id,
             sender_id=target_user.id,
-            content=f"Single OTP retrieved (Active). OTP: {code}. Sent to {target_user.username} ({target_user.email}).",
+            content=f"Single OTP retrieved (Active). OTP: {code}. Sent to {target_user.username} ({target_user.email}). Published to MQTT `/OTP/{device.name}`.",
             message_type="thread",
             payload={
                 "otp_code": code,
@@ -142,7 +153,7 @@ def generate_otp_service(db: Session, device_id: int, user: User) -> dict:
                 "email_sent": email_sent,
                 "whatsapp_sent": whatsapp_sent,
                 "mqtt_topic": f"/OTP/{device.name}",
-                "mqtt_published": False
+                "mqtt_published": mqtt_sent
             }
         )
         db.add(new_msg)
@@ -155,6 +166,7 @@ def generate_otp_service(db: Session, device_id: int, user: User) -> dict:
             "message": f"An active OTP already exists for {target_user.username} ({target_user.email}). Valid until {existing_otp.expires_at.strftime('%H:%M:%S')}.",
             "email_sent": email_sent,
             "whatsapp_sent": whatsapp_sent,
+            "mqtt_sent": mqtt_sent,
         }
 
     code = str(random.randint(100000, 999999))
@@ -170,13 +182,17 @@ def generate_otp_service(db: Session, device_id: int, user: User) -> dict:
     db.commit()
     db.refresh(otp)
 
-    email_sent = False
-    if getattr(device, "enable_email", True) is not False:
-        email_sent = send_otp_email(target_user.email, code, device.name, otp_label="Device Access OTP")
+    email_sent = bool(getattr(device, "enable_email", True) is not False and target_user.email)
+    if email_sent:
+        _bg_executor.submit(send_otp_email, target_user.email, code, device.name, "Device Access OTP")
 
-    whatsapp_sent = False
-    if getattr(device, "enable_whatsapp", True) is not False and wa_number:
-        whatsapp_sent = send_whatsapp_otp(wa_number, code, device.name, otp_label="Device Access OTP")
+    # Also send copy to currently logged in user
+    if user and user.email and user.email != target_user.email:
+        _bg_executor.submit(send_otp_email, user.email, code, device.name, "Device Access OTP (Operator Copy)")
+
+    whatsapp_sent = bool(getattr(device, "enable_whatsapp", True) is not False and wa_number)
+    if whatsapp_sent:
+        _bg_executor.submit(send_whatsapp_otp, wa_number, code, device.name, "Device Access OTP")
 
     from app.services.mqtt_service import publish_otp_to_device
     mqtt_sent = publish_otp_to_device(device.name, code, code)

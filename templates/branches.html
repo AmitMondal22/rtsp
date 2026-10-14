@@ -4,144 +4,162 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Branch Management – IOTBLITZ" />
-    <title>Branch Management – IOTBLITZ</title>
+    <meta name="description" content="Branch Management – ANG Smart Access" />
+    <title>Branch Management — ANG Smart Access</title>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            purple: '#9060ff',
-                            blue: '#1a8cff',
-                            darkBg: '#111217',
-                            sidebar: '#1c1d22',
-                            iconbar: '#15161b',
-                            cardBg: '#1e1f25',
-                            border: '#2b2c33',
-                            muted: '#85868e',
-                            danger: '#ef4444',
-                            success: '#10b981',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="/static/style.css?v=1.2" />
+    <link rel="stylesheet" href="/static/style.css?v=3.0" />
 </head>
 
-<body class="bg-brand-darkBg text-slate-100 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-brand-purple selection:text-white">
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
 
-    <!-- Top Navigation Bar -->
-    <nav class="bg-brand-sidebar border-b border-brand-border px-4 py-2 flex items-center justify-between shrink-0 select-none">
+    <!-- ── Top Header Navigation ── -->
+    <header class="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between shrink-0 select-none z-30">
+        <!-- Left: Status & Branch Indicator -->
         <div class="flex items-center space-x-4">
-            <a class="text-brand-purple font-bold tracking-widest text-xs uppercase flex items-center" href="/dashboard">
-                <i class="bi bi-camera-video-fill mr-2.5"></i> IOTBLITZ
-            </a>
-            <div class="border-l border-brand-border pl-4 flex items-center space-x-1 text-brand-muted text-xs">
-                <i class="bi bi-diagram-3-fill mr-1 text-brand-purple"></i>
-                <span class="text-white font-semibold">Branch Management</span>
+            <span class="flex items-center text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span> SYSTEM ONLINE
+            </span>
+            <div class="hidden sm:flex items-center space-x-1.5 text-xs text-slate-500">
+                <i class="bi bi-diagram-3-fill text-slate-400"></i>
+                <span class="font-medium">Section:</span>
+                <span class="font-bold text-slate-700">Branch Management</span>
             </div>
         </div>
 
+        <!-- Right: Auditor / User Info & Sign out -->
         <div class="flex items-center space-x-4">
-            <!-- Account Dropdown -->
-            <div class="relative inline-block text-left" id="user-profile-dropdown">
-                <button class="hover:text-white transition cursor-pointer flex items-center focus:outline-none"
-                    id="user-menu-btn" title="User Profile">
-                    <i class="bi bi-person-circle text-slate-300 hover:text-white text-lg"></i>
-                </button>
-                <div id="user-dropdown-menu"
-                    class="absolute right-0 mt-2.5 w-48 bg-brand-cardBg border border-brand-border rounded shadow-2xl py-2 z-50 hidden">
-                    <div class="px-3 py-1 border-b border-brand-border text-brand-muted text-[9px] font-bold uppercase tracking-wider">Account Info</div>
-                    <div class="px-3 py-2 text-[11px] text-slate-300">
-                        <span class="block font-semibold text-white truncate" id="user-dropdown-username">Username</span>
-                        <span class="block text-brand-muted text-[10px] mt-0.5" id="user-dropdown-role">ROLE</span>
-                    </div>
-                    <div class="border-t border-brand-border my-1"></div>
-                    <button id="logout-btn" class="w-full text-left px-3 py-1.5 hover:bg-brand-border hover:text-white text-[11px] text-brand-danger transition flex items-center">
-                        <i class="bi bi-box-arrow-right mr-2"></i> Log Out
-                    </button>
-                </div>
+            <!-- Digital Clock Display -->
+            <div class="hidden sm:flex flex-col text-right leading-none pr-3 border-r border-slate-200 font-mono text-[11px]">
+                <span id="nav-clock" class="text-slate-800 font-bold">--:--:--</span>
+                <span id="nav-date" class="text-slate-400 text-[10px] mt-0.5">----/--/--</span>
             </div>
 
-            <!-- Clock -->
-            <div class="border-l border-brand-border pl-4 text-right leading-tight font-mono select-none" style="font-size: 10px;">
-                <div id="nav-clock" class="text-white font-semibold">12:34:00 AM</div>
-                <div id="nav-date" class="text-brand-muted">2026/07/24</div>
-            </div>
+            <!-- Dynamic Role Badge -->
+            <span id="user-role-badge" class="bg-sky-100 text-sky-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-sky-200">USER</span>
+
+            <!-- Dynamic User Email / Username -->
+            <span id="user-display-email" class="text-xs text-slate-600 font-medium truncate max-w-[200px]">Loading...</span>
+
+            <!-- Sign Out Button -->
+            <button id="logout-btn" class="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center transition cursor-pointer px-2.5 py-1 rounded-md hover:bg-slate-100">
+                <i class="bi bi-box-arrow-right mr-1.5 text-slate-500"></i> Sign out
+            </button>
         </div>
-    </nav>
+    </header>
 
     <!-- Page Body -->
     <div class="flex flex-1 overflow-hidden">
 
-        <!-- Left Icon Sidebar -->
-        <aside class="w-14 bg-brand-iconbar border-r border-brand-border flex flex-col items-center py-4 space-y-4 shrink-0">
-            <a href="/dashboard" title="Cameras & Live Feed"
-                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
-                <i class="bi bi-camera-video-fill text-base"></i>
-            </a>
-            <a href="/banks" id="nav-banks-link" title="Bank Management"
-                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
-                <i class="bi bi-bank text-base"></i>
-            </a>
-            <a href="/branches" id="nav-branches-link" title="Branch Management"
-                class="w-8 h-8 rounded flex items-center justify-center text-white bg-brand-purple active:scale-95 transition">
-                <i class="bi bi-diagram-3-fill text-base"></i>
-            </a>
-            <a href="/users" id="nav-users-link" title="User Management"
-                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
-                <i class="bi bi-people text-base"></i>
-            </a>
-            <a href="/manage-otp" title="Manage OTP"
-                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
-                <i class="bi bi-key-fill text-base"></i>
-            </a>
+        <!-- ── Left Navigation Sidebar ── -->
+        <aside class="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4">
+            <div>
+                <!-- Brand Header -->
+                <div class="flex items-center space-x-3 mb-5 px-2">
+                    <div class="w-9 h-9 rounded-lg bg-sky-600 flex items-center justify-center text-white text-lg shadow-xs">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-sm font-bold text-slate-900 tracking-tight leading-none">ANG Smart Access</h1>
+                        <span class="text-[11px] text-slate-400 font-medium">Techavo Systems</span>
+                    </div>
+                </div>
+
+                <!-- Navigation Links -->
+                <nav class="space-y-0.5">
+                    <!-- SECTION: OPERATIONS -->
+                    <div class="nav-section-title">Operations</div>
+                    <a href="/dashboard" id="nav-overview" class="nav-item">
+                        <i class="bi bi-grid-fill"></i> Overview Dashboard
+                    </a>
+                    <a href="/rtsp" id="nav-rtsp" class="nav-item">
+                        <i class="bi bi-camera-video-fill"></i> Live RTSP Monitoring
+                    </a>
+                    <a href="/requests" id="nav-requests" class="nav-item">
+                        <i class="bi bi-envelope-paper-fill"></i> Pending Access Requests
+                    </a>
+                    <a href="/alerts" id="nav-alerts" class="nav-item">
+                        <i class="bi bi-shield-exclamation"></i> Security Alerts
+                    </a>
+                    <a href="/reports" id="nav-reports" class="nav-item">
+                        <i class="bi bi-bar-chart-fill"></i> Reports
+                    </a>
+
+                    <!-- SECTION: INFRASTRUCTURE -->
+                    <div class="nav-section-title">Infrastructure</div>
+                    <a href="/devices" id="nav-devices" class="nav-item">
+                        <i class="bi bi-cpu-fill"></i> Device Management
+                    </a>
+
+                    <!-- SECTION: OTP -->
+                    <div class="nav-section-title">OTP Management</div>
+                    <a href="/online-otp" id="nav-online-otp" class="nav-item">
+                        <i class="bi bi-key-fill"></i> Online OTP Requests
+                    </a>
+                    <a href="/offline-otp" id="nav-offline-otp" class="nav-item">
+                        <i class="bi bi-database-fill"></i> Bulk Offline OTP Database
+                    </a>
+
+                    <!-- SECTION: ADMINISTRATION -->
+                    <div class="nav-section-title">Administration</div>
+                    <a href="/banks" id="nav-banks" class="nav-item">
+                        <i class="bi bi-bank"></i> Bank Management
+                    </a>
+                    <a href="/branches" id="nav-branches" class="nav-item active">
+                        <i class="bi bi-diagram-3-fill"></i> Branch Management
+                    </a>
+                    <a href="/users" id="nav-users" class="nav-item">
+                        <i class="bi bi-people-fill"></i> User Management
+                    </a>
+                    <a href="/logs" id="nav-logs" class="nav-item">
+                        <i class="bi bi-journal-text"></i> Event Logs & Audit
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Bottom System Status -->
+            <div class="pt-3 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <span>ANG System v2.0</span>
+                <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Connected</span>
+            </div>
         </aside>
 
         <!-- Main Content -->
-        <main class="flex-1 bg-brand-darkBg overflow-y-auto p-6">
+        <main class="flex-1 bg-[#f8fafc] overflow-y-auto p-6">
             <div class="max-w-6xl mx-auto space-y-6">
 
                 <!-- Page Header with Add Branch Trigger -->
-                <div class="flex items-center justify-between border-b border-brand-border pb-4">
-                    <div class="flex items-center space-x-3">
-                        <i class="bi bi-diagram-3-fill text-brand-purple text-2xl"></i>
-                        <div>
-                            <h1 class="text-lg font-bold text-white">Branch Management</h1>
-                            <p class="text-xs text-brand-muted">View, add, and edit bank branches, 3 user assignments, and OTP permissions</p>
-                        </div>
+                <div class="flex items-center justify-between border-b border-slate-200 pb-4">
+                    <div>
+                        <h1 class="text-lg font-bold text-slate-900">Branch Management</h1>
+                        <p class="text-xs text-slate-500">View, add, and edit bank branches, 3-user dual OTP assignments, and access policies</p>
                     </div>
-                    <button id="open-add-branch-modal" class="px-4 py-2 bg-brand-purple hover:bg-brand-purple/90 active:scale-95 transition text-white font-bold rounded-lg text-xs flex items-center shadow-lg">
+                    <button id="open-add-branch-modal" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 active:scale-95 transition text-white font-bold rounded-lg text-xs flex items-center shadow-xs">
                         <i class="bi bi-plus-lg mr-1.5"></i> Add Branch
                     </button>
                 </div>
 
                 <!-- Filter & Controls Bar -->
-                <div class="bg-brand-sidebar border border-brand-border rounded-xl p-4 flex items-center justify-between">
+                <div class="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-xs">
                     <div class="flex items-center space-x-3">
-                        <label class="text-xs font-bold uppercase tracking-wider text-brand-muted flex items-center">
-                            <i class="bi bi-funnel-fill mr-1.5 text-brand-purple"></i> Filter by Bank:
+                        <label class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center">
+                            <i class="bi bi-funnel-fill mr-1.5 text-sky-600"></i> Filter by Bank:
                         </label>
-                        <select id="branch-bank-filter" class="px-3 py-1.5 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-100 focus:outline-none focus:border-brand-purple">
+                        <select id="branch-bank-filter" class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500">
                             <option value="all">All Banks (Show All Branches)</option>
                         </select>
                     </div>
-                    <span id="branches-count" class="bg-brand-darkBg px-2.5 py-1 rounded text-xs text-brand-muted font-medium">0 branches</span>
+                    <span id="branches-count" class="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full text-xs font-semibold">0 branches</span>
                 </div>
 
                 <!-- Registered Branches Table -->
-                <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6">
+                <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-xs">
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm border-collapse">
+                        <table class="w-full text-left text-xs border-collapse">
                             <thead>
-                                <tr class="border-b border-brand-border text-brand-muted text-xs uppercase tracking-wider">
+                                <tr class="border-b border-slate-200 text-slate-400 text-[10px] uppercase tracking-wider">
                                     <th class="py-3 pr-3 font-bold w-12">ID</th>
                                     <th class="py-3 pr-3 font-bold">Branch Name</th>
                                     <th class="py-3 pr-3 font-bold">Bank Name</th>
@@ -151,10 +169,10 @@
                                     <th class="py-3 font-bold text-right">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="branches-table-body" class="divide-y divide-brand-border/40 text-slate-300">
+                            <tbody id="branches-table-body" class="divide-y divide-slate-100 text-slate-700">
                                 <tr>
-                                    <td colspan="7" class="py-8 text-center text-brand-muted text-xs">
-                                        <i class="bi bi-hourglass-split mr-2 animate-spin"></i> Loading branches...
+                                    <td colspan="7" class="py-8 text-center text-slate-400 text-xs">
+                                        <i class="bi bi-arrow-repeat mr-2 animate-spin"></i> Loading branches...
                                     </td>
                                 </tr>
                             </tbody>
@@ -166,312 +184,291 @@
         </main>
     </div>
 
-    <div id="add-branch-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg shrink-0">
+    <!-- Add Branch Modal -->
+    <div id="add-branch-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white border border-slate-200 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
                 <div class="flex items-center space-x-2">
-                    <i class="bi bi-diagram-3-fill text-brand-purple text-lg"></i>
-                    <h3 class="font-bold text-white text-sm">Add Branch under Bank</h3>
+                    <i class="bi bi-diagram-3 text-sky-600 text-lg"></i>
+                    <h3 class="font-bold text-slate-900 text-sm">Add Branch under Bank</h3>
                 </div>
-                <button id="close-add-branch-modal" type="button" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+                <button id="close-add-branch-modal" type="button" class="text-slate-400 hover:text-slate-700"><i class="bi bi-x-lg"></i></button>
             </div>
-            <form id="add-branch-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <form id="add-branch-form" class="flex flex-col flex-1 min-h-0 overflow-hidden text-xs">
                 <div class="p-5 space-y-4 overflow-y-auto flex-1">
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Select Bank * (Default Fast Bank)</label>
-                        <select id="branch-bank-id"
-                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 focus:outline-none focus:border-brand-purple" required>
-                            <option value="">— Select Bank —</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Branch Name *</label>
-                        <input id="branch-name" type="text"
-                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple"
-                            placeholder="e.g. Main Vault Branch" required />
-                    </div>
-                </div>
-
-                <!-- Active Status Toggle -->
-                <div class="bg-brand-darkBg border border-brand-border rounded-lg p-3 flex items-center justify-between">
-                    <span class="text-xs font-bold text-brand-muted uppercase"><i class="bi bi-power mr-1"></i> Branch Active Status:</span>
-                    <label class="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
-                        <input id="branch-is-active" type="checkbox" class="rounded border-brand-border text-brand-purple focus:ring-0" checked />
-                        <span class="font-semibold text-emerald-400">Active</span>
-                    </label>
-                </div>
-
-                <!-- Direct 3 User Creation -->
-                <div class="border-t border-brand-border pt-3">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="block text-xs font-bold uppercase tracking-wider text-brand-purple">
-                            <i class="bi bi-person-plus-fill mr-1"></i> Add 3 Users to Branch
-                        </span>
-                        <span class="text-[10px] text-brand-muted font-normal">Configure credentials, OTP role &amp; status per user</span>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Select Bank *</label>
+                            <select id="branch-bank-id" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" required>
+                                <option value="">— Select Bank —</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Branch Name *</label>
+                            <input id="branch-name" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500" placeholder="e.g. Main Vault Branch" required />
+                        </div>
                     </div>
 
-                    <div class="space-y-3">
+                    <!-- Active Status Toggle -->
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center justify-between">
+                        <span class="text-xs font-bold text-slate-700 uppercase"><i class="bi bi-power mr-1"></i> Branch Active Status:</span>
+                        <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer">
+                            <input id="branch-is-active" type="checkbox" class="rounded border-slate-300 text-sky-600 focus:ring-0" checked />
+                            <span class="font-semibold text-emerald-600">Active</span>
+                        </label>
+                    </div>
+
+                    <!-- Direct 3 User Creation -->
+                    <div class="border-t border-slate-200 pt-3 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="block text-xs font-bold uppercase tracking-wider text-sky-700">
+                                <i class="bi bi-person-plus-fill mr-1"></i> Add 3 Users to Branch
+                            </span>
+                            <span class="text-[10px] text-slate-500">Configure credentials, OTP role &amp; status</span>
+                        </div>
+
                         <!-- User 1 Box -->
-                        <div class="bg-brand-darkBg border border-brand-border rounded-lg p-3 space-y-2">
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
                             <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-slate-200">
-                                    <i class="bi bi-person-badge text-emerald-400 mr-1"></i> User 1 (Primary User)
+                                <span class="text-xs font-bold text-slate-800">
+                                    <i class="bi bi-person-badge text-emerald-600 mr-1"></i> User 1 (Primary)
                                 </span>
                                 <div class="flex items-center space-x-3">
-                                    <!-- OTP Role Dropdown -->
-                                    <select id="branch-user1-otp-role" class="px-2 py-1 bg-brand-sidebar border border-brand-border rounded text-[11px] text-emerald-400 focus:outline-none focus:border-brand-purple font-semibold">
+                                    <select id="branch-user1-otp-role" class="px-2 py-1 bg-white border border-slate-200 rounded text-[11px] text-emerald-700 font-semibold focus:outline-none">
                                         <option value="otp1">1st OTP User</option>
                                         <option value="otp2">2nd OTP User</option>
-                                        <option value="none">No OTP (Standard)</option>
+                                        <option value="none">No OTP</option>
                                     </select>
-                                    <!-- User Enable / Disable Toggle -->
                                     <label class="flex items-center space-x-1 cursor-pointer text-xs">
-                                        <input id="branch-user1-active" type="checkbox" checked class="rounded border-brand-border text-emerald-400 focus:ring-0" />
-                                        <span class="text-[11px] text-emerald-400 font-semibold">Active</span>
+                                        <input id="branch-user1-active" type="checkbox" checked class="rounded border-slate-300 text-emerald-600 focus:ring-0" />
+                                        <span class="text-[11px] text-emerald-600 font-semibold">Active</span>
                                     </label>
                                 </div>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <input id="branch-user1-username" type="text" placeholder="User 1 Username (e.g. branch_user1)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
+                                <input id="branch-user1-username" type="text" placeholder="Username" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
                                 <div>
-                                    <input id="branch-user1-email" type="email" placeholder="User 1 Email (e.g. u1@bank.com)" class="w-full px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
+                                    <input id="branch-user1-email" type="email" placeholder="Email" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
                                     <div id="branch-user1-email-feedback" class="text-[11px] mt-0.5"></div>
                                 </div>
-                                <input id="branch-user1-password" type="password" placeholder="User 1 Password (min 6 chars)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
-                                <input id="branch-user1-whatsapp" type="text" placeholder="User 1 WhatsApp (+91...)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="branch-user1-password" type="password" placeholder="Password (min 6 chars)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
+                                <input id="branch-user1-whatsapp" type="text" placeholder="WhatsApp (+91...)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                             </div>
                         </div>
 
                         <!-- User 2 Box -->
-                        <div class="bg-brand-darkBg border border-brand-border rounded-lg p-3 space-y-2">
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
                             <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-slate-200">
-                                    <i class="bi bi-person-badge text-brand-blue mr-1"></i> User 2 (Secondary User)
+                                <span class="text-xs font-bold text-slate-800">
+                                    <i class="bi bi-person-badge text-sky-600 mr-1"></i> User 2 (Secondary)
                                 </span>
                                 <div class="flex items-center space-x-3">
-                                    <!-- OTP Role Dropdown -->
-                                    <select id="branch-user2-otp-role" class="px-2 py-1 bg-brand-sidebar border border-brand-border rounded text-[11px] text-brand-blue focus:outline-none focus:border-brand-purple font-semibold">
+                                    <select id="branch-user2-otp-role" class="px-2 py-1 bg-white border border-slate-200 rounded text-[11px] text-sky-700 font-semibold focus:outline-none">
                                         <option value="otp2">2nd OTP User</option>
                                         <option value="otp1">1st OTP User</option>
-                                        <option value="none">No OTP (Standard)</option>
+                                        <option value="none">No OTP</option>
                                     </select>
-                                    <!-- User Enable / Disable Toggle -->
                                     <label class="flex items-center space-x-1 cursor-pointer text-xs">
-                                        <input id="branch-user2-active" type="checkbox" checked class="rounded border-brand-border text-brand-blue focus:ring-0" />
-                                        <span class="text-[11px] text-brand-blue font-semibold">Active</span>
+                                        <input id="branch-user2-active" type="checkbox" checked class="rounded border-slate-300 text-sky-600 focus:ring-0" />
+                                        <span class="text-[11px] text-sky-600 font-semibold">Active</span>
                                     </label>
                                 </div>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <input id="branch-user2-username" type="text" placeholder="User 2 Username (e.g. branch_user2)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
+                                <input id="branch-user2-username" type="text" placeholder="Username" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
                                 <div>
-                                    <input id="branch-user2-email" type="email" placeholder="User 2 Email (e.g. u2@bank.com)" class="w-full px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
+                                    <input id="branch-user2-email" type="email" placeholder="Email" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
                                     <div id="branch-user2-email-feedback" class="text-[11px] mt-0.5"></div>
                                 </div>
-                                <input id="branch-user2-password" type="password" placeholder="User 2 Password (min 6 chars)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
-                                <input id="branch-user2-whatsapp" type="text" placeholder="User 2 WhatsApp (+91...)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="branch-user2-password" type="password" placeholder="Password (min 6 chars)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
+                                <input id="branch-user2-whatsapp" type="text" placeholder="WhatsApp (+91...)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                             </div>
                         </div>
 
                         <!-- User 3 Box -->
-                        <div class="bg-brand-darkBg border border-brand-border rounded-lg p-3 space-y-2">
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
                             <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-slate-200">
-                                    <i class="bi bi-person-badge text-brand-purple mr-1"></i> User 3 (Tertiary User)
+                                <span class="text-xs font-bold text-slate-800">
+                                    <i class="bi bi-person-badge text-purple-600 mr-1"></i> User 3 (Tertiary)
                                 </span>
                                 <div class="flex items-center space-x-3">
-                                    <!-- OTP Role Dropdown -->
-                                    <select id="branch-user3-otp-role" class="px-2 py-1 bg-brand-sidebar border border-brand-border rounded text-[11px] text-brand-purple focus:outline-none focus:border-brand-purple font-semibold">
-                                        <option value="none">No OTP (Standard)</option>
+                                    <select id="branch-user3-otp-role" class="px-2 py-1 bg-white border border-slate-200 rounded text-[11px] text-purple-700 font-semibold focus:outline-none">
+                                        <option value="none">No OTP</option>
                                         <option value="otp1">1st OTP User</option>
                                         <option value="otp2">2nd OTP User</option>
                                     </select>
-                                    <!-- User Enable / Disable Toggle -->
                                     <label class="flex items-center space-x-1 cursor-pointer text-xs">
-                                        <input id="branch-user3-active" type="checkbox" checked class="rounded border-brand-border text-brand-purple focus:ring-0" />
-                                        <span class="text-[11px] text-brand-purple font-semibold">Active</span>
+                                        <input id="branch-user3-active" type="checkbox" checked class="rounded border-slate-300 text-purple-600 focus:ring-0" />
+                                        <span class="text-[11px] text-purple-600 font-semibold">Active</span>
                                     </label>
                                 </div>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <input id="branch-user3-username" type="text" placeholder="User 3 Username (e.g. branch_user3)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
+                                <input id="branch-user3-username" type="text" placeholder="Username" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
                                 <div>
-                                    <input id="branch-user3-email" type="email" placeholder="User 3 Email (e.g. u3@bank.com)" class="w-full px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
+                                    <input id="branch-user3-email" type="email" placeholder="Email" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
                                     <div id="branch-user3-email-feedback" class="text-[11px] mt-0.5"></div>
                                 </div>
-                                <input id="branch-user3-password" type="password" placeholder="User 3 Password (min 6 chars)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" required />
-                                <input id="branch-user3-whatsapp" type="text" placeholder="User 3 WhatsApp (+91...)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="branch-user3-password" type="password" placeholder="Password (min 6 chars)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
+                                <input id="branch-user3-whatsapp" type="text" placeholder="WhatsApp (+91...)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                             </div>
                         </div>
                     </div>
+
+                    <p id="add-branch-error" class="text-rose-600 text-xs mt-2"></p>
                 </div>
-
-                <p id="add-branch-error" class="text-brand-danger text-xs mt-2"></p>
-            </div>
-            <div class="flex justify-end space-x-3 p-4 border-t border-brand-border bg-brand-darkBg shrink-0">
-                <button type="button" id="cancel-add-branch" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
-                <button type="submit" class="px-5 py-2 bg-brand-purple hover:bg-brand-purple/90 transition text-white font-bold rounded-lg text-xs">Save Branch</button>
-            </div>
-        </form>
-    </div>
+                <div class="flex justify-end space-x-3 p-4 border-t border-slate-100 bg-slate-50 shrink-0">
+                    <button type="button" id="cancel-add-branch" class="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 hover:bg-slate-100 transition">Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 transition text-white font-bold rounded-lg text-xs shadow-xs">Save Branch</button>
+                </div>
+            </form>
+        </div>
     </div>
 
-    <!-- ── Edit Branch Modal ── -->
-    <div id="edit-branch-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg shrink-0">
+    <!-- Edit Branch Modal -->
+    <div id="edit-branch-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white border border-slate-200 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
                 <div class="flex items-center space-x-2">
-                    <i class="bi bi-pencil-square text-brand-purple text-lg"></i>
-                    <h3 class="font-bold text-white text-sm">Edit Branch &amp; Users</h3>
+                    <i class="bi bi-pencil-square text-sky-600 text-lg"></i>
+                    <h3 class="font-bold text-slate-900 text-sm">Edit Branch &amp; Users</h3>
                 </div>
-                <button id="close-edit-branch-modal" type="button" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+                <button id="close-edit-branch-modal" type="button" class="text-slate-400 hover:text-slate-700"><i class="bi bi-x-lg"></i></button>
             </div>
-            <form id="edit-branch-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <form id="edit-branch-form" class="flex flex-col flex-1 min-h-0 overflow-hidden text-xs">
                 <input type="hidden" id="edit-branch-id" />
                 <div class="p-5 space-y-4 overflow-y-auto flex-1">
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Select Bank *</label>
-                        <select id="edit-branch-bank-id"
-                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 focus:outline-none focus:border-brand-purple" required>
-                            <option value="">— Select Bank —</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Branch Name *</label>
-                        <input id="edit-branch-name" type="text"
-                            class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple"
-                            required />
-                    </div>
-                </div>
-
-                <div class="bg-brand-darkBg border border-brand-border rounded-lg p-3 flex items-center justify-between">
-                    <span class="text-xs font-bold text-brand-muted uppercase"><i class="bi bi-power mr-1"></i> Branch Active Status:</span>
-                    <label class="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
-                        <input id="edit-branch-is-active" type="checkbox" class="rounded border-brand-border text-brand-purple focus:ring-0" />
-                        <span class="font-semibold text-emerald-400">Active</span>
-                    </label>
-                </div>
-
-                <!-- Direct User Creation / Update for Edit Modal -->
-                <div class="border-t border-brand-border pt-3">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="block text-xs font-bold uppercase tracking-wider text-brand-purple">
-                            <i class="bi bi-person-plus-fill mr-1"></i> Update 3 Users of Branch
-                        </span>
-                        <span class="text-[10px] text-brand-muted font-normal">Configure credentials, OTP role &amp; status per user</span>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Select Bank *</label>
+                            <select id="edit-branch-bank-id" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" required>
+                                <option value="">— Select Bank —</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Branch Name *</label>
+                            <input id="edit-branch-name" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
+                        </div>
                     </div>
 
-                    <div class="space-y-3">
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center justify-between">
+                        <span class="text-xs font-bold text-slate-700 uppercase"><i class="bi bi-power mr-1"></i> Branch Active Status:</span>
+                        <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer">
+                            <input id="edit-branch-is-active" type="checkbox" class="rounded border-slate-300 text-sky-600 focus:ring-0" />
+                            <span class="font-semibold text-emerald-600">Active</span>
+                        </label>
+                    </div>
+
+                    <!-- Direct User Update for Edit Modal -->
+                    <div class="border-t border-slate-200 pt-3 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="block text-xs font-bold uppercase tracking-wider text-sky-700">
+                                <i class="bi bi-person-plus-fill mr-1"></i> Update 3 Users of Branch
+                            </span>
+                            <span class="text-[10px] text-slate-500">Configure credentials, OTP role &amp; status</span>
+                        </div>
+
                         <!-- Edit User 1 Box -->
-                        <div class="bg-brand-darkBg border border-brand-border rounded-lg p-3 space-y-2">
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
                             <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-slate-200">
-                                    <i class="bi bi-person-badge text-emerald-400 mr-1"></i> User 1 (Primary User)
+                                <span class="text-xs font-bold text-slate-800">
+                                    <i class="bi bi-person-badge text-emerald-600 mr-1"></i> User 1 (Primary)
                                 </span>
                                 <div class="flex items-center space-x-3">
-                                    <!-- OTP Role Dropdown -->
-                                    <select id="edit-branch-user1-otp-role" class="px-2 py-1 bg-brand-sidebar border border-brand-border rounded text-[11px] text-emerald-400 focus:outline-none focus:border-brand-purple font-semibold">
+                                    <select id="edit-branch-user1-otp-role" class="px-2 py-1 bg-white border border-slate-200 rounded text-[11px] text-emerald-700 font-semibold focus:outline-none">
                                         <option value="otp1">1st OTP User</option>
                                         <option value="otp2">2nd OTP User</option>
-                                        <option value="none">No OTP (Standard)</option>
+                                        <option value="none">No OTP</option>
                                     </select>
-                                    <!-- User Enable / Disable Toggle -->
                                     <label class="flex items-center space-x-1 cursor-pointer text-xs">
-                                        <input id="edit-branch-user1-active" type="checkbox" checked class="rounded border-brand-border text-emerald-400 focus:ring-0" />
-                                        <span class="text-[11px] text-emerald-400 font-semibold">Active</span>
+                                        <input id="edit-branch-user1-active" type="checkbox" checked class="rounded border-slate-300 text-emerald-600 focus:ring-0" />
+                                        <span class="text-[11px] text-emerald-600 font-semibold">Active</span>
                                     </label>
                                 </div>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <input id="edit-branch-user1-username" type="text" placeholder="User 1 Username" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="edit-branch-user1-username" type="text" placeholder="Username" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                                 <div>
-                                    <input id="edit-branch-user1-email" type="email" placeholder="User 1 Email" class="w-full px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                    <input id="edit-branch-user1-email" type="email" placeholder="Email" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                                     <div id="edit-branch-user1-email-feedback" class="text-[11px] mt-0.5"></div>
                                 </div>
-                                <input id="edit-branch-user1-password" type="password" placeholder="User 1 New Password (optional)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
-                                <input id="edit-branch-user1-whatsapp" type="text" placeholder="User 1 WhatsApp" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="edit-branch-user1-password" type="password" placeholder="New Password (optional)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
+                                <input id="edit-branch-user1-whatsapp" type="text" placeholder="WhatsApp" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                             </div>
                         </div>
 
                         <!-- Edit User 2 Box -->
-                        <div class="bg-brand-darkBg border border-brand-border rounded-lg p-3 space-y-2">
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
                             <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-slate-200">
-                                    <i class="bi bi-person-badge text-brand-blue mr-1"></i> User 2 (Secondary User)
+                                <span class="text-xs font-bold text-slate-800">
+                                    <i class="bi bi-person-badge text-sky-600 mr-1"></i> User 2 (Secondary)
                                 </span>
                                 <div class="flex items-center space-x-3">
-                                    <!-- OTP Role Dropdown -->
-                                    <select id="edit-branch-user2-otp-role" class="px-2 py-1 bg-brand-sidebar border border-brand-border rounded text-[11px] text-brand-blue focus:outline-none focus:border-brand-purple font-semibold">
+                                    <select id="edit-branch-user2-otp-role" class="px-2 py-1 bg-white border border-slate-200 rounded text-[11px] text-sky-700 font-semibold focus:outline-none">
                                         <option value="otp2">2nd OTP User</option>
                                         <option value="otp1">1st OTP User</option>
-                                        <option value="none">No OTP (Standard)</option>
+                                        <option value="none">No OTP</option>
                                     </select>
-                                    <!-- User Enable / Disable Toggle -->
                                     <label class="flex items-center space-x-1 cursor-pointer text-xs">
-                                        <input id="edit-branch-user2-active" type="checkbox" checked class="rounded border-brand-border text-brand-blue focus:ring-0" />
-                                        <span class="text-[11px] text-brand-blue font-semibold">Active</span>
+                                        <input id="edit-branch-user2-active" type="checkbox" checked class="rounded border-slate-300 text-sky-600 focus:ring-0" />
+                                        <span class="text-[11px] text-sky-600 font-semibold">Active</span>
                                     </label>
                                 </div>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <input id="edit-branch-user2-username" type="text" placeholder="User 2 Username" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="edit-branch-user2-username" type="text" placeholder="Username" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                                 <div>
-                                    <input id="edit-branch-user2-email" type="email" placeholder="User 2 Email" class="w-full px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                    <input id="edit-branch-user2-email" type="email" placeholder="Email" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                                     <div id="edit-branch-user2-email-feedback" class="text-[11px] mt-0.5"></div>
                                 </div>
-                                <input id="edit-branch-user2-password" type="password" placeholder="User 2 New Password (optional)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
-                                <input id="edit-branch-user2-whatsapp" type="text" placeholder="User 2 WhatsApp" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="edit-branch-user2-password" type="password" placeholder="New Password (optional)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
+                                <input id="edit-branch-user2-whatsapp" type="text" placeholder="WhatsApp" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                             </div>
                         </div>
 
                         <!-- Edit User 3 Box -->
-                        <div class="bg-brand-darkBg border border-brand-border rounded-lg p-3 space-y-2">
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
                             <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-slate-200">
-                                    <i class="bi bi-person-badge text-brand-purple mr-1"></i> User 3 (Tertiary User)
+                                <span class="text-xs font-bold text-slate-800">
+                                    <i class="bi bi-person-badge text-purple-600 mr-1"></i> User 3 (Tertiary)
                                 </span>
                                 <div class="flex items-center space-x-3">
-                                    <!-- OTP Role Dropdown -->
-                                    <select id="edit-branch-user3-otp-role" class="px-2 py-1 bg-brand-sidebar border border-brand-border rounded text-[11px] text-brand-purple focus:outline-none focus:border-brand-purple font-semibold">
-                                        <option value="none">No OTP (Standard)</option>
+                                    <select id="edit-branch-user3-otp-role" class="px-2 py-1 bg-white border border-slate-200 rounded text-[11px] text-purple-700 font-semibold focus:outline-none">
+                                        <option value="none">No OTP</option>
                                         <option value="otp1">1st OTP User</option>
                                         <option value="otp2">2nd OTP User</option>
                                     </select>
-                                    <!-- User Enable / Disable Toggle -->
                                     <label class="flex items-center space-x-1 cursor-pointer text-xs">
-                                        <input id="edit-branch-user3-active" type="checkbox" checked class="rounded border-brand-border text-brand-purple focus:ring-0" />
-                                        <span class="text-[11px] text-brand-purple font-semibold">Active</span>
+                                        <input id="edit-branch-user3-active" type="checkbox" checked class="rounded border-slate-300 text-purple-600 focus:ring-0" />
+                                        <span class="text-[11px] text-purple-600 font-semibold">Active</span>
                                     </label>
                                 </div>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <input id="edit-branch-user3-username" type="text" placeholder="User 3 Username" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="edit-branch-user3-username" type="text" placeholder="Username" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                                 <div>
-                                    <input id="edit-branch-user3-email" type="email" placeholder="User 3 Email" class="w-full px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                    <input id="edit-branch-user3-email" type="email" placeholder="Email" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                                     <div id="edit-branch-user3-email-feedback" class="text-[11px] mt-0.5"></div>
                                 </div>
-                                <input id="edit-branch-user3-password" type="password" placeholder="User 3 New Password (optional)" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
-                                <input id="edit-branch-user3-whatsapp" type="text" placeholder="User 3 WhatsApp" class="px-2.5 py-1.5 bg-brand-sidebar border border-brand-border rounded text-xs text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-purple" />
+                                <input id="edit-branch-user3-password" type="password" placeholder="New Password (optional)" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
+                                <input id="edit-branch-user3-whatsapp" type="text" placeholder="WhatsApp" class="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
                             </div>
                         </div>
                     </div>
+
+                    <p id="edit-branch-error" class="text-rose-600 text-xs mt-2"></p>
                 </div>
-
-                <p id="edit-branch-error" class="text-brand-danger text-xs mt-2"></p>
-            </div>
-            <div class="flex justify-end space-x-3 p-4 border-t border-brand-border bg-brand-darkBg shrink-0">
-                <button type="button" id="cancel-edit-branch" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
-                <button type="submit" class="px-5 py-2 bg-brand-purple hover:bg-brand-purple/90 transition text-white font-bold rounded-lg text-xs">Save Changes</button>
-            </div>
-        </form>
-    </div>
+                <div class="flex justify-end space-x-3 p-4 border-t border-slate-100 bg-slate-50 shrink-0">
+                    <button type="button" id="cancel-edit-branch" class="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 hover:bg-slate-100 transition">Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 transition text-white font-bold rounded-lg text-xs shadow-xs">Save Changes</button>
+                </div>
+            </form>
+        </div>
     </div>
 
-    <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
-
-    <script src="/static/branches.js?v=1.2"></script>
+    <script src="/static/nav.js?v=2.0"></script>
+    <script src="/static/branches.js?v=3.0"></script>
 </body>
 </html>
+

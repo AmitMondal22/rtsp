@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Device Management & Console — ANG Smart Access" />
+    <title>Device Management & Console — ANG Smart Access</title>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    <!-- Tailwind CSS v3 CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="/static/style.css?v=6.0" />
+</head>
+
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
+
+    <!-- —— Top Header Navigation Bar —— -->
+    <header class="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between shrink-0 select-none z-30">
+        <!-- Left: Organization / Bank Selector -->
+        <div class="flex items-center space-x-3">
+            <span class="text-xs text-slate-500 font-medium">Organization</span>
+            <div class="relative">
+                <select id="organization-select" class="appearance-none bg-slate-50 border border-slate-200 rounded-md pl-3 pr-8 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-xs">
+                    <option value="">Default Organization</option>
+                </select>
+                <i class="bi bi-chevron-down absolute right-2.5 top-2.5 text-[10px] text-slate-400 pointer-events-none"></i>
+            </div>
+        </div>
+
+        <!-- Right: Auditor / User Info & Sign out -->
+        <div class="flex items-center space-x-4">
+            <div class="hidden sm:flex flex-col text-right leading-none pr-3 border-r border-slate-200 font-mono text-[11px]">
+                <span id="nav-clock" class="text-slate-800 font-bold">--:--:--</span>
+                <span id="nav-date" class="text-slate-400 text-[10px] mt-0.5">----/--/--</span>
+            </div>
+            <span id="user-role-badge" class="bg-sky-100 text-sky-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-sky-200">USER</span>
+            <span id="user-display-email" class="text-xs text-slate-600 font-medium truncate max-w-[200px]">Loading...</span>
+            <button id="logout-btn" class="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center transition cursor-pointer px-2.5 py-1 rounded-md hover:bg-slate-100">
+                <i class="bi bi-box-arrow-right mr-1.5 text-slate-500"></i> Sign out
+            </button>
+        </div>
+    </header>
+
+    <!-- —— Main Workspace Body —— -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- —— Left Navigation Sidebar —— -->
+        <aside class="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4">
+            <div>
+                <!-- Brand Header -->
+                <div class="flex items-center space-x-3 mb-5 px-2">
+                    <div class="w-9 h-9 rounded-lg bg-sky-600 flex items-center justify-center text-white text-lg shadow-xs">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-sm font-bold text-slate-900 tracking-tight leading-none">ANG Smart Access</h1>
+                        <span class="text-[11px] text-slate-400 font-medium">Techavo Systems</span>
+                    </div>
+                </div>
+
+                <!-- Navigation Links -->
+                <nav class="space-y-0.5">
+                    <div class="nav-section-title">Operations</div>
+                    <a href="/dashboard" id="nav-overview" class="nav-item">
+                        <i class="bi bi-grid-fill"></i> Overview Dashboard
+                    </a>
+                    <a href="/rtsp" id="nav-rtsp" class="nav-item">
+                        <i class="bi bi-camera-video-fill"></i> Live RTSP Monitoring
+                    </a>
+                    <a href="/requests" id="nav-requests" class="nav-item">
+                        <i class="bi bi-envelope-paper-fill"></i> Pending Access Requests
+                    </a>
+                    <a href="/alerts" id="nav-alerts" class="nav-item">
+                        <i class="bi bi-shield-exclamation"></i> Security Alerts
+                    </a>
+                    <a href="/reports" id="nav-reports" class="nav-item">
+                        <i class="bi bi-bar-chart-fill"></i> Reports
+                    </a>
+
+                    <div class="nav-section-title">Infrastructure</div>
+                    <a href="/devices" id="nav-devices" class="nav-item active">
+                        <i class="bi bi-cpu-fill"></i> Device Management
+                    </a>
+
+                    <div class="nav-section-title">OTP Management</div>
+                    <a href="/online-otp" id="nav-online-otp" class="nav-item">
+                        <i class="bi bi-key-fill"></i> Online OTP Requests
+                    </a>
+                    <a href="/offline-otp" id="nav-offline-otp" class="nav-item">
+                        <i class="bi bi-database-fill"></i> Bulk Offline OTP Database
+                    </a>
+
+                    <div class="nav-section-title">Administration</div>
+                    <a href="/banks" id="nav-banks" class="nav-item">
+                        <i class="bi bi-bank"></i> Bank Management
+                    </a>
+                    <a href="/branches" id="nav-branches" class="nav-item">
+                        <i class="bi bi-diagram-3-fill"></i> Branch Management
+                    </a>
+                    <a href="/users" id="nav-users" class="nav-item">
+                        <i class="bi bi-people-fill"></i> User Management
+                    </a>
+                    <a href="/logs" id="nav-logs" class="nav-item">
+                        <i class="bi bi-journal-text"></i> Event Logs & Audit
+                    </a>
+                </nav>
+            </div>
+
+            <div class="pt-3 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <span>ANG System v2.0</span>
+                <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Connected</span>
+            </div>
+        </aside>
+
+        <!-- —— Main Content: Device Management & Console —— -->
+        <main class="flex-1 bg-[#f8fafc] overflow-y-auto p-6 flex flex-col min-w-0">
+            <section class="flex flex-col space-y-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Device Management & Console</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Register devices, configure RTSP streams, and issue secure dual OTP authorizations.</p>
+                    </div>
+                    <button id="add-device-btn" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-xs transition flex items-center">
+                        <i class="bi bi-plus-lg mr-1.5"></i> Add Device
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-[520px]">
+                    <!-- Device Tree & Selector -->
+                    <div class="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col">
+                        <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                            <span class="text-xs font-bold text-slate-700 uppercase tracking-wider">Configured Devices</span>
+                            <span id="device-count" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-semibold">0</span>
+                        </div>
+                        <div id="device-list" class="space-y-2 flex-1 overflow-y-auto"></div>
+                    </div>
+
+                    <!-- Single Focused Stream Area -->
+                    <div class="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col">
+                        <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                            <div class="flex items-center space-x-2">
+                                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                                <h4 id="view-device-name" class="text-sm font-bold text-slate-900">Select a device</h4>
+                                <span id="view-device-status" class="badge-online text-xs font-semibold"></span>
+                            </div>
+                            <div id="camera-selector-bar" class="hidden flex items-center space-x-2">
+                                <select id="camera-dropdown" class="bg-slate-50 border border-slate-200 rounded text-xs px-2.5 py-1 text-slate-800 focus:outline-none"></select>
+                            </div>
+                        </div>
+
+                        <!-- Player Canvas -->
+                        <div class="relative bg-slate-950 rounded-lg aspect-video flex items-center justify-center overflow-hidden mb-4 shadow-inner">
+                            <canvas id="camera-feed-canvas" class="w-full h-full object-contain" style="display: none;"></canvas>
+                            <img id="camera-feed-mjpeg" class="w-full h-full object-contain" style="display: none;" alt="Feed" />
+                            <div id="stream-status" class="text-slate-400 text-xs font-medium text-center p-4">
+                                <i class="bi bi-camera-video text-3xl text-slate-500 block mb-2 opacity-40"></i>
+                                Select a device from the left to start live surveillance stream
+                            </div>
+                            <div class="camera-overlay absolute top-3 left-3 bg-black/70 px-2.5 py-1 rounded text-[11px] text-white flex items-center space-x-1.5 hidden">
+                                <span class="w-2 h-2 bg-rose-500 rounded-full animate-ping"></span>
+                                <span class="font-bold">LIVE STREAM</span>
+                            </div>
+                            <div class="absolute bottom-3 left-3 bg-black/70 px-2 py-0.5 rounded text-[10px] text-white font-mono hidden" id="camera-timestamp"></div>
+                        </div>
+
+                        <!-- Actions & Modes -->
+                        <div id="device-view" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-2">
+                                <div id="view-device-location" class="text-xs text-slate-500"></div>
+                                <div id="view-device-rtsp" class="font-mono text-xs text-slate-400 truncate"></div>
+                                <div id="device-config-display" class="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs space-y-1"></div>
+                                <div class="grid grid-cols-2 gap-2 pt-2">
+                                    <button id="validate-stream-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Validate</button>
+                                    <button id="refresh-stream-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Refresh</button>
+                                    <button id="edit-device-btn" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">Edit</button>
+                                    <button id="delete-device-btn" class="py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-xs font-semibold transition">Delete</button>
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-50 p-4 rounded-lg border border-slate-100 space-y-3 flex flex-col justify-between">
+                                <div>
+                                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">Action Control</span>
+                                    <select id="mode-dropdown" class="w-full bg-white border border-slate-200 rounded text-xs p-2 text-slate-800 focus:outline-none">
+                                        <option value="no_threat" selected>NO THREAT</option>
+                                        <option value="thread">THREAT</option>
+                                        <option value="offline_otp">OFFLINE OTP</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button id="send-action-btn" class="flex-1 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded text-xs font-semibold shadow-xs transition">
+                                        <i class="bi bi-send mr-1.5"></i> Send Action
+                                    </button>
+                                    <button id="generate-report-btn" class="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-semibold transition" title="OTP Report">
+                                        <i class="bi bi-file-earmark-bar-graph"></i>
+                                    </button>
+                                </div>
+                                <div id="last-ack-card" class="text-[11px] text-slate-500 border-t border-slate-200/60 pt-2">
+                                    <div class="flex justify-between font-semibold text-slate-700">
+                                        <span>Last Request & Ack</span>
+                                        <span id="last-ack-time">No recent requests</span>
+                                    </div>
+                                    <div id="last-ack-content" class="mt-1">Waiting for requests...</div>
+                                </div>
+
+                                <div id="action-result" class="hidden bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-2 mt-2">
+                                    <div class="flex items-center justify-between font-bold text-slate-800">
+                                        <span id="action-result-title">Result</span>
+                                        <button id="close-result-btn" type="button" class="text-slate-400 hover:text-slate-700 text-xs"><i class="bi bi-x-lg"></i></button>
+                                    </div>
+                                    <div id="action-result-body"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="empty-state" class="p-8 text-center text-slate-400 my-auto">
+                            <i class="bi bi-camera-video text-4xl block mb-2 opacity-30"></i>
+                            <h4 class="text-sm font-bold text-slate-700 mb-1">No Device Selected</h4>
+                            <p class="text-xs max-w-sm mx-auto">Select a surveillance device from the tree or click 'Add Device' to configure a new camera stream.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add/Edit Device Modal -->
+    <div id="add-device-form" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white border border-slate-200 rounded-xl w-full max-w-xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
+                <div class="flex items-center space-x-2">
+                    <i class="bi bi-cpu text-sky-600 text-lg"></i>
+                    <h4 class="text-sm font-bold text-slate-900" id="device-form-title">Add New Device</h4>
+                </div>
+                <button id="close-device-modal-btn" type="button" class="text-slate-400 hover:text-slate-700"><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            <div class="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Device Name / UID *</label>
+                        <input id="device-name" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" placeholder="e.g. Front Door Camera" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Connection Type</label>
+                        <select id="device-type" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-700 cursor-not-allowed" disabled>
+                            <option value="rtsp" selected>RTSP Connection</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">RTSP Stream URL *</label>
+                    <input id="device-rtsp" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500 font-mono" placeholder="rtsp://admin:pass@192.168.1.100:554/live" required />
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Bank / Entity</label>
+                        <select id="device-bank-id" class="w-full px-3 py-2 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500">
+                            <option value="">— Select Bank —</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Branch</label>
+                        <select id="device-branch-id" class="w-full px-3 py-2 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500">
+                            <option value="">— Select Branch —</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Location</label>
+                        <input id="device-location" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" placeholder="e.g. Server Room Entrance" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Manufacturer</label>
+                        <input id="device-manufacturer" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:border-sky-500" placeholder="Hikvision / Dahua" />
+                    </div>
+                </div>
+
+                <!-- Notification Toggles -->
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center space-x-6">
+                    <span class="text-xs font-bold text-slate-700 uppercase"><i class="bi bi-bell mr-1"></i> OTP Delivery:</span>
+                    <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer">
+                        <input id="device-enable-email" type="checkbox" class="rounded border-slate-300 text-sky-600 focus:ring-0" checked />
+                        <span>Email OTP</span>
+                    </label>
+                    <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer">
+                        <input id="device-enable-whatsapp" type="checkbox" class="rounded border-slate-300 text-sky-600 focus:ring-0" checked />
+                        <span>WhatsApp OTP</span>
+                    </label>
+                </div>
+                <p id="device-error" class="text-rose-600 text-xs"></p>
+            </div>
+
+            <div class="p-4 border-t border-slate-100 bg-slate-50 shrink-0 flex justify-end space-x-3">
+                <button id="cancel-device-btn" type="button" class="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 transition text-slate-700 rounded-lg text-xs font-semibold">Cancel</button>
+                <button id="save-device-btn" type="button" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 transition text-white font-bold rounded-lg text-xs shadow-xs">Save Device</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTP Report Modal -->
+    <div id="otp-report-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white border border-slate-200 rounded-xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                <div class="flex items-center space-x-2">
+                    <i class="bi bi-file-earmark-bar-graph text-sky-600 text-lg"></i>
+                    <h3 class="font-bold text-slate-900 text-sm">OTP Activity & Acknowledgment Report</h3>
+                </div>
+                <button id="close-report-modal-btn" class="text-slate-400 hover:text-slate-700"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3">
+                <div id="report-meta-summary" class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 flex justify-between items-center">
+                    <div><strong>Device:</strong> <span id="report-device-name">—</span></div>
+                    <div><strong>Location:</strong> <span id="report-device-location">—</span></div>
+                    <div><strong>Total Records:</strong> <span id="report-total-count">0</span></div>
+                </div>
+                <div class="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-200 bg-slate-50 text-slate-500 uppercase text-[10px]">
+                                <th class="py-2.5 px-3 font-bold">Date & Time</th>
+                                <th class="py-2.5 px-3 font-bold">Type</th>
+                                <th class="py-2.5 px-3 font-bold">User 1</th>
+                                <th class="py-2.5 px-3 font-bold">User 2</th>
+                                <th class="py-2.5 px-3 font-bold">Channels</th>
+                                <th class="py-2.5 px-3 font-bold">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-table-body" class="divide-y divide-slate-100 text-slate-700 font-mono text-[11px]"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="p-3 border-t border-slate-100 bg-slate-50 flex justify-end space-x-3">
+                <button id="print-report-btn" class="px-3.5 py-1.5 bg-sky-600 text-white font-bold rounded text-xs hover:bg-sky-700 transition">
+                    <i class="bi bi-printer mr-1"></i> Print / Export
+                </button>
+                <button id="dismiss-report-btn" class="px-3.5 py-1.5 bg-white border border-slate-200 text-slate-700 rounded text-xs hover:bg-slate-100 transition">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Application Script -->
+    <script src="/static/nav.js?v=2.0"></script>
+    <script src="/static/app.js?v=17.0"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (typeof window.initHeaderClock === 'function') window.initHeaderClock();
+            if (typeof window.checkUserRoleAndPermissions === 'function') window.checkUserRoleAndPermissions();
+            if (typeof window.loadOrganizationsDropdown === 'function') await window.loadOrganizationsDropdown();
+            if (typeof window.loadDevices === 'function') await window.loadDevices();
+            
+            // Auto-select device if specified in query param ?device=ID
+            const urlParams = new URLSearchParams(window.location.search);
+            const selId = urlParams.get('device') || urlParams.get('select');
+            if (selId && typeof window.selectDevice === 'function') {
+                window.selectDevice(parseInt(selId));
+            }
+        });
+    </script>
+</body>
+</html>
+

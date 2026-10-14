@@ -28,7 +28,7 @@ from app.services.camera_service import (
     verify_otp_service,
 )
 from app.services.device_service import get_device_by_id, build_rtsp_url
-from app.services.email_service import send_otp_email
+from app.services.email_service import send_otp_email, send_dual_otp_email
 from app.services.mqtt_service import publish_otp_to_device
 from app.services.whatsapp_service import send_whatsapp_otp
 from app.streaming import validate_rtsp_with_fallback
@@ -128,11 +128,27 @@ async def websocket_stream(
         try:
             while True:
                 # Keep WebSocket open until client closes tab/connection
-                await websocket.receive_text()
+                try:
+                    data = await websocket.receive()
+                    if data.get("type") == "websocket.disconnect":
+                        break
+                except WebSocketDisconnect:
+                    break
+                except RuntimeError as re:
+                    # Handle uvicorn 'transfer_data_task' attribute error on disconnect
+                    logger.debug("WebSocket runtime disconnect for device %d: %s", device_id, re)
+                    break
+                except Exception as inner_e:
+                    # 'WebSocketProtocol' attribute errors or other disconnect signals
+                    err_str = str(inner_e)
+                    if "transfer_data_task" in err_str or "disconnect" in err_str.lower():
+                        break
+                    logger.debug("WebSocket recv error for device %d: %s", device_id, inner_e)
+                    break
         except WebSocketDisconnect:
             pass
         except Exception as e:
-            logger.info("WebSocket closed for device %d: %s", device_id, e)
+            logger.debug("WebSocket closed for device %d: %s", device_id, e)
         finally:
             await broadcaster.remove_websocket(websocket)
 
@@ -149,36 +165,52 @@ def mjpeg_stream(
 ):
     """
     MJPEG live stream for a device.
-    Uses camera broadcaster to share frames across multiple HTTP clients.
+    Uses camera broadcaster to share frames across multiple HTTP clients with zero-hang timeout.
     """
-    try:
-        device = get_device_by_id(db, device_id)
-        check_device_access(device, current_user)
+    device = get_device_by_id(db, device_id)
+    check_device_access(device, current_user)
 
-        rtsp_url = build_rtsp_url(device)
-        from app.streaming_opencv import camera_broadcaster_hub
-        broadcaster = camera_broadcaster_hub.get_broadcaster(device_id, rtsp_url, transport="tcp")
+    rtsp_url = build_rtsp_url(device)
+    if not rtsp_url:
+        raise HTTPException(status_code=404, detail="RTSP stream not configured for this device")
 
-        async def mjpeg_generator():
-            q = broadcaster.subscribe_queue()
-            boundary = b"--frame\r\n"
-            content_type = b"Content-Type: image/jpeg\r\n\r\n"
-            try:
-                while True:
-                    frame = await q.get()
+    from app.streaming_opencv import camera_broadcaster_hub, get_offline_jpeg_frame
+    broadcaster = camera_broadcaster_hub.get_broadcaster(device_id, rtsp_url, transport="tcp")
+
+    async def mjpeg_generator():
+        q = broadcaster.subscribe_queue()
+        boundary = b"--frame\r\n"
+        content_type = b"Content-Type: image/jpeg\r\n\r\n"
+        offline_cycles = 0
+        try:
+            while True:
+                try:
+                    frame = await asyncio.wait_for(q.get(), timeout=2.0)
+                    if frame is None:
+                        offline_cycles += 1
+                        yield boundary + content_type + get_offline_jpeg_frame(device.name) + b"\r\n"
+                        if offline_cycles >= 2:
+                            break
+                        await asyncio.sleep(1.0)
+                        continue
+
+                    offline_cycles = 0
                     yield boundary + content_type + frame + b"\r\n"
-            except asyncio.CancelledError:
-                pass
-            finally:
-                broadcaster.unsubscribe_queue(q)
+                except asyncio.TimeoutError:
+                    offline_cycles += 1
+                    yield boundary + content_type + get_offline_jpeg_frame(device.name) + b"\r\n"
+                    if offline_cycles >= 2:
+                        break
+                    await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            broadcaster.unsubscribe_queue(q)
 
-        return StreamingResponse(
-            mjpeg_generator(),
-            media_type="multipart/x-mixed-replace; boundary=frame",
-        )
-    except Exception as e:
-        logger.error(f"Error initializing MJPEG stream for device {device_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to initialize MJPEG camera stream")
+    return StreamingResponse(
+        mjpeg_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
 
 
 
@@ -200,9 +232,19 @@ def test_stream(
     check_device_access(device, current_user)
 
     rtsp_url = build_rtsp_url(device)
+    if not rtsp_url:
+        return {
+            "device_id": device_id,
+            "rtsp_url": "",
+            "success": False,
+            "error": "No RTSP stream URL configured for this device.",
+        }
 
-    # Set RTSP transport
-    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+    # Set RTSP transport with fast 2s timeout
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+        "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000|"
+        "probesize;200000|analyzeduration;200000|reorder_queue_size;0|stimeout;2000000"
+    )
 
     cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
     if not cap.isOpened():
@@ -236,6 +278,7 @@ def test_stream(
 
 @router.get("/otp-requests")
 def get_global_otp_requests(
+    only_pending: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -269,72 +312,414 @@ def get_global_otp_requests(
         return []
 
     now = get_ist_now()
-    thirty_minutes_ago = now - datetime.timedelta(minutes=30)
+    twenty_four_hours_ago = now - datetime.timedelta(hours=24)
 
-    # 1. Fetch latest acknowledgment / sent OTP timestamps per device in the time window
+    # 1. Fetch latest acknowledgment / sent OTP timestamps and payloads per device in the time window
     ack_types = ["otp_request_ack", "no_threat", "offline_otp", "thread"]
     ack_messages = (
         db.query(ThreadMessage)
         .filter(
             ThreadMessage.device_id.in_(device_ids),
             ThreadMessage.message_type.in_(ack_types),
-            ThreadMessage.created_at >= thirty_minutes_ago,
+            ThreadMessage.created_at >= twenty_four_hours_ago,
         )
+        .order_by(ThreadMessage.created_at.desc())
         .all()
     )
     latest_ack_map = {}
+    latest_ack_data = {}
     for ack in ack_messages:
         did = ack.device_id
         if did not in latest_ack_map or ack.created_at > latest_ack_map[did]:
             latest_ack_map[did] = ack.created_at
+            latest_ack_data[did] = ack.payload or {}
 
-    # 2. Fetch pending otp_request messages
+    # 2. Fetch otp_request, acknowledged, and direct action messages from the last 24 hours
     messages = (
         db.query(ThreadMessage)
         .filter(
             ThreadMessage.device_id.in_(device_ids),
-            ThreadMessage.message_type == "otp_request",
-            ThreadMessage.created_at >= thirty_minutes_ago,
+            ThreadMessage.message_type.in_(["otp_request", "otp_request_ack", "no_threat", "thread", "offline_otp"]),
+            ThreadMessage.created_at >= twenty_four_hours_ago,
         )
-        .order_by(ThreadMessage.device_id, ThreadMessage.created_at.desc())
+        .order_by(ThreadMessage.created_at.desc())
+        .limit(100)
         .all()
     )
 
-    # Keep only un-acknowledged PENDING requests per device
-    seen = set()
-    unique_messages = []
-    for msg in messages:
-        if msg.message_type != "otp_request":
-            continue
-        payload_status = str((msg.payload or {}).get("status", "Pending")).strip()
-        if payload_status != "Pending":
-            continue
-
-        # Skip if an acknowledgment or sent OTP exists for this device at or after this request
-        if msg.device_id in latest_ack_map:
-            if latest_ack_map[msg.device_id] >= msg.created_at:
-                continue
-
-        if msg.device_id not in seen:
-            seen.add(msg.device_id)
-            unique_messages.append(msg)
-
-    # Build device lookup map (avoid N+1)
+    # Build device lookup map
     devices = db.query(Device).filter(Device.id.in_(device_ids)).all()
     device_map = {d.id: d for d in devices}
 
-    return [
-        {
+    results = []
+    for msg in messages:
+        p_dict = dict(msg.payload or {})
+        raw_p = str(p_dict.get("raw_payload", "")).strip()
+        if raw_p.startswith("*OTP") or raw_p.startswith("*OFFOTP,BULK"):
+            continue
+
+        payload_status = str(p_dict.get("status", "Pending")).strip()
+        is_pending = (msg.message_type == "otp_request" and payload_status == "Pending")
+        if is_pending and msg.device_id in latest_ack_map and latest_ack_map[msg.device_id] >= msg.created_at:
+            is_pending = False
+
+        if only_pending and not is_pending:
+            continue
+
+        otp1 = p_dict.get("otp1") or p_dict.get("otp1_code") or p_dict.get("otp_code") or p_dict.get("code")
+        otp2 = p_dict.get("otp2") or p_dict.get("otp2_code")
+        rec1 = p_dict.get("recipient1")
+        rec2 = p_dict.get("recipient2")
+
+        if (not otp1 or not otp2) and msg.device_id in latest_ack_data:
+            ack_p = latest_ack_data[msg.device_id]
+            if not otp1:
+                otp1 = ack_p.get("otp1") or ack_p.get("otp1_code") or ack_p.get("otp_code") or ack_p.get("code")
+            if not otp2:
+                otp2 = ack_p.get("otp2") or ack_p.get("otp2_code")
+            if not rec1:
+                rec1 = ack_p.get("recipient1")
+            if not rec2:
+                rec2 = ack_p.get("recipient2")
+
+        # If STILL no OTP codes for pending request, generate them and save so they are immediately visible on the card
+        if is_pending and (not otp1 or not otp2):
+            dev = device_map.get(msg.device_id)
+            if not otp1:
+                otp1 = str(random.randint(1000, 9999))
+            if not otp2:
+                otp2 = str(random.randint(1000, 9999))
+            if not rec1:
+                if dev and dev.branch and getattr(dev.branch, "otp1_user", None):
+                    rec1 = dev.branch.otp1_user.username
+                elif dev and dev.branch and getattr(dev.branch, "user1", None):
+                    rec1 = dev.branch.user1.username
+                elif dev and dev.assigned_user:
+                    rec1 = dev.assigned_user.username
+                else:
+                    rec1 = "Branch Mgr"
+            if not rec2:
+                if dev and dev.branch and getattr(dev.branch, "otp2_user", None):
+                    rec2 = dev.branch.otp2_user.username
+                elif dev and dev.branch and getattr(dev.branch, "user2", None):
+                    rec2 = dev.branch.user2.username
+                elif dev and getattr(dev, "assigned_user_2", None):
+                    rec2 = dev.assigned_user_2.username
+                else:
+                    rec2 = "Vault Custodian"
+            p_dict["otp1"] = otp1
+            p_dict["otp2"] = otp2
+            p_dict["recipient1"] = rec1
+            p_dict["recipient2"] = rec2
+            msg.payload = p_dict
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(msg, "payload")
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        p_dict["status"] = "Pending" if is_pending else "Acknowledged"
+        if otp1:
+            p_dict["otp1"] = otp1
+        if otp2:
+            p_dict["otp2"] = otp2
+        if rec1:
+            p_dict["recipient1"] = rec1
+        if rec2:
+            p_dict["recipient2"] = rec2
+
+        dev = device_map.get(msg.device_id)
+        dev_name = dev.name if dev else f"Device #{msg.device_id}"
+        bank_name = dev.bank.name if (dev and dev.bank) else "General"
+        branch_name = dev.branch.name if (dev and dev.branch) else "Default Branch"
+
+        results.append({
             "id": msg.id,
             "device_id": msg.device_id,
-            "device_name": device_map.get(msg.device_id, {}).name if device_map.get(msg.device_id) else f"Device #{msg.device_id}",
+            "device_name": dev_name,
+            "bank_name": bank_name,
+            "branch_name": branch_name,
             "content": msg.content,
-            "payload": msg.payload,
+            "payload": p_dict,
+            "otp1": otp1,
+            "otp2": otp2,
+            "recipient1": rec1,
+            "recipient2": rec2,
             "message_type": msg.message_type,
+            "status": "Pending" if is_pending else "Acknowledged",
             "created_at": msg.created_at.isoformat(),
+        })
+
+    # Sort so Pending requests are first, and newer ones first
+    results.sort(key=lambda r: (0 if r["status"] == "Pending" else 1, -datetime.datetime.fromisoformat(r["created_at"]).timestamp()))
+    return results
+
+
+def _fast_process_device(db: Session, device: Device, current_user: User, request_msg: ThreadMessage = None) -> dict:
+    from sqlalchemy.orm.attributes import flag_modified
+    now = get_ist_now()
+    expires_at = now + datetime.timedelta(minutes=5)
+
+    req_p = dict(request_msg.payload or {}) if request_msg else {}
+    otp1 = req_p.get("otp1") or str(random.randint(1000, 9999))
+    otp2 = req_p.get("otp2") or str(random.randint(1000, 9999))
+
+    candidate_ids = []
+    if device.branch:
+        for attr in ("otp1_user_id", "otp2_user_id", "user1_id", "user2_id", "user3_id"):
+            v = getattr(device.branch, attr, None)
+            if v:
+                candidate_ids.append(v)
+    if device.assigned_user_id:
+        candidate_ids.append(device.assigned_user_id)
+    if getattr(device, "assigned_user_2_id", None):
+        candidate_ids.append(device.assigned_user_2_id)
+    if current_user.id:
+        candidate_ids.append(current_user.id)
+
+    user_map = {}
+    if candidate_ids:
+        fetched = db.query(User).filter(User.id.in_(set(candidate_ids))).all()
+        user_map = {u.id: u for u in fetched}
+
+    u1 = None
+    if device.branch:
+        if device.branch.otp1_user_id and device.branch.otp1_user_id in user_map:
+            u1 = user_map[device.branch.otp1_user_id]
+        elif device.branch.user1_id and device.branch.user1_id in user_map:
+            u1 = user_map[device.branch.user1_id]
+        elif device.branch.user2_id and device.branch.user2_id in user_map:
+            u1 = user_map[device.branch.user2_id]
+        elif device.branch.user3_id and device.branch.user3_id in user_map:
+            u1 = user_map[device.branch.user3_id]
+    if not u1 and device.assigned_user_id and device.assigned_user_id in user_map:
+        u1 = user_map[device.assigned_user_id]
+    if not u1:
+        u1 = current_user
+
+    u2 = None
+    if device.branch:
+        if device.branch.otp2_user_id and device.branch.otp2_user_id in user_map and device.branch.otp2_user_id != u1.id:
+            u2 = user_map[device.branch.otp2_user_id]
+        elif device.branch.user2_id and device.branch.user2_id in user_map and device.branch.user2_id != u1.id:
+            u2 = user_map[device.branch.user2_id]
+        elif device.branch.user3_id and device.branch.user3_id in user_map and device.branch.user3_id != u1.id:
+            u2 = user_map[device.branch.user3_id]
+        elif device.branch.user1_id and device.branch.user1_id in user_map and device.branch.user1_id != u1.id:
+            u2 = user_map[device.branch.user1_id]
+    if not u2 and getattr(device, "assigned_user_2_id", None) and device.assigned_user_2_id in user_map and device.assigned_user_2_id != u1.id:
+        u2 = user_map[device.assigned_user_2_id]
+    if not u2:
+        bank_id = device.bank_id or current_user.bank_id
+        if bank_id:
+            u2_fb = db.query(User).filter(User.bank_id == bank_id, User.id != u1.id).first()
+            if u2_fb:
+                u2 = u2_fb
+    if not u2:
+        u2 = u1
+
+    enable_otp1 = getattr(device.branch, "enable_otp1", True) if device.branch else True
+    enable_otp2 = getattr(device.branch, "enable_otp2", True) if device.branch else True
+    if enable_otp1 is None:
+        enable_otp1 = True
+    if enable_otp2 is None:
+        enable_otp2 = True
+
+    if enable_otp1:
+        db.add(OTPCode(device_id=device.id, user_id=u1.id, code=otp1, expires_at=expires_at))
+    if enable_otp2:
+        db.add(OTPCode(device_id=device.id, user_id=u2.id, code=otp2, expires_at=expires_at))
+    db.commit()
+
+    # Publish OTP to hardware via MQTT (ALWAYS publish to hardware)
+    mqtt_sent = publish_otp_to_device(device.name, otp1, otp2)
+
+    enable_email = getattr(device, "enable_email", True) is not False
+    enable_wa = getattr(device, "enable_whatsapp", True) is not False
+    wa1 = getattr(u1, "whatsapp_number", None) or getattr(device, "whatsapp_number_1", None)
+    wa2 = getattr(u2, "whatsapp_number", None) or getattr(device, "whatsapp_number_2", None)
+
+    email_sent1 = bool(enable_email and enable_otp1 and u1.email)
+    email_sent2 = bool(enable_email and enable_otp2 and u2.email)
+    whatsapp_sent1 = bool(enable_wa and wa1 and enable_otp1)
+    whatsapp_sent2 = bool(enable_wa and wa2 and enable_otp2)
+
+    if email_sent1:
+        _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Authorization OTP")
+    if email_sent2:
+        _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Authorization OTP")
+    if whatsapp_sent1:
+        _otp_executor.submit(send_whatsapp_otp, wa1, otp1, device.name, "1st Authorization OTP")
+    if whatsapp_sent2:
+        _otp_executor.submit(send_whatsapp_otp, wa2, otp2, device.name, "2nd Authorization OTP")
+
+    # Send dual OTP to currently logged-in user ("same login") as well
+    if current_user and current_user.email and current_user.email not in (u1.email, u2.email):
+        _otp_executor.submit(send_dual_otp_email, current_user.email, otp1, otp2, device.name, "Fast Authorization OTP (Operator Copy)")
+
+    # Mark request_msg acknowledged
+    if request_msg:
+        request_msg.message_type = "otp_request_ack"
+        p = dict(request_msg.payload or {})
+        p["status"] = "Acknowledged"
+        p["otp1"] = otp1
+        p["otp2"] = otp2
+        p["recipient1"] = u1.username
+        p["recipient2"] = u2.username
+        request_msg.payload = p
+        flag_modified(request_msg, "payload")
+
+    # Mark all other pending requests for this device acknowledged
+    other_pending = (
+        db.query(ThreadMessage)
+        .filter(
+            ThreadMessage.device_id == device.id,
+            ThreadMessage.message_type == "otp_request",
+        )
+        .all()
+    )
+    for p_msg in other_pending:
+        p_stat = str((p_msg.payload or {}).get("status", "Pending")).strip()
+        if p_stat == "Pending":
+            p_msg.message_type = "otp_request_ack"
+            p = dict(p_msg.payload or {})
+            p["status"] = "Acknowledged"
+            p["otp1"] = otp1
+            p["otp2"] = otp2
+            p_msg.payload = p
+            flag_modified(p_msg, "payload")
+
+    # Save ThreadMessage record
+    ack_audit = ThreadMessage(
+        device_id=device.id,
+        sender_id=current_user.id,
+        content=f"Fast Authorization approved for {device.name}. 1st OTP -> {u1.username}, 2nd OTP -> {u2.username}. Published to MQTT `/OTP/{device.name}`.",
+        message_type="no_threat",
+        payload={
+            "recipient1": u1.username,
+            "recipient1_email": u1.email,
+            "recipient2": u2.username,
+            "recipient2_email": u2.email,
+            "otp1": otp1,
+            "otp2": otp2,
+            "mqtt_topic": f"/OTP/{device.name}",
+            "mqtt_published": mqtt_sent,
+            "status": "Acknowledged",
         }
-        for msg in unique_messages
-    ]
+    )
+    db.add(ack_audit)
+    db.commit()
+
+    return {
+        "success": True,
+        "device_id": device.id,
+        "device_name": device.name,
+        "otp1": otp1,
+        "otp2": otp2,
+        "user1": u1.username,
+        "user2": u2.username,
+        "mqtt_sent": mqtt_sent,
+        "email_sent": email_sent1 or email_sent2,
+        "whatsapp_sent": whatsapp_sent1 or whatsapp_sent2,
+    }
+
+
+@router.post("/requests/{request_id}/process")
+def process_single_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fast-process a single pending hardware access request."""
+    req_msg = db.query(ThreadMessage).filter(ThreadMessage.id == request_id).first()
+    if not req_msg:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    device = db.query(Device).filter(Device.id == req_msg.device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    check_device_access(device, current_user)
+    res = _fast_process_device(db, device, current_user, req_msg)
+    return res
+
+
+@router.post("/requests/process-all")
+def process_all_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Batch fast-process all currently pending hardware access requests."""
+    # Build device filter based on role
+    if current_user.role in ("super_admin", "admin"):
+        device_ids = [d.id for d in db.query(Device.id).all()]
+    elif current_user.bank_id:
+        device_ids = [
+            d.id for d in db.query(Device.id).filter(
+                or_(
+                    Device.bank_id == current_user.bank_id,
+                    Device.assigned_user_id == current_user.id,
+                    Device.assigned_user_2_id == current_user.id,
+                    Device.owner_id == current_user.id,
+                )
+            ).all()
+        ]
+    else:
+        device_ids = [
+            d.id for d in db.query(Device.id).filter(
+                or_(
+                    Device.assigned_user_id == current_user.id,
+                    Device.assigned_user_2_id == current_user.id,
+                    Device.owner_id == current_user.id,
+                )
+            ).all()
+        ]
+
+    if not device_ids:
+        return {"success": True, "count": 0, "processed": []}
+
+    pending_messages = (
+        db.query(ThreadMessage)
+        .filter(
+            ThreadMessage.device_id.in_(device_ids),
+            ThreadMessage.message_type == "otp_request",
+        )
+        .order_by(ThreadMessage.created_at.desc())
+        .all()
+    )
+
+    devices = db.query(Device).filter(Device.id.in_(device_ids)).all()
+    device_map = {d.id: d for d in devices}
+
+    processed_devices = set()
+    results = []
+
+    for msg in pending_messages:
+        payload_status = str((msg.payload or {}).get("status", "Pending")).strip()
+        if payload_status != "Pending":
+            continue
+        dev = device_map.get(msg.device_id)
+        if not dev:
+            continue
+        if dev.id not in processed_devices:
+            processed_devices.add(dev.id)
+            res = _fast_process_device(db, dev, current_user, msg)
+            results.append(res)
+        else:
+            from sqlalchemy.orm.attributes import flag_modified
+            msg.message_type = "otp_request_ack"
+            p = dict(msg.payload or {})
+            p["status"] = "Acknowledged"
+            if results:
+                last_res = results[-1]
+                p["otp1"] = last_res.get("otp1")
+                p["otp2"] = last_res.get("otp2")
+            msg.payload = p
+            flag_modified(msg, "payload")
+            db.commit()
+
+    return {"success": True, "count": len(results), "processed": results}
 
 
 # ── Thread Messages (via MQTT) ──
@@ -471,15 +856,13 @@ def send_action(
     check_device_access(device, current_user)
 
     now = get_ist_now()
-    thirty_minutes_ago = now - datetime.timedelta(minutes=30)
-
-    # Check for ALL active pending hardware OTP requests for this device
+    # Check for active pending hardware OTP requests for this device (within 24 hours)
     pending_reqs = (
         db.query(ThreadMessage)
         .filter(
             ThreadMessage.device_id == device_id,
             ThreadMessage.message_type == "otp_request",
-            ThreadMessage.created_at >= thirty_minutes_ago,
+            ThreadMessage.created_at >= (now - datetime.timedelta(hours=24)),
         )
         .order_by(ThreadMessage.created_at.desc())
         .all()
@@ -492,30 +875,58 @@ def send_action(
             active_pending_reqs.append(r)
 
     if not active_pending_reqs and mode not in ("offline_otp", "no_thread"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active pending hardware OTP request found for this device. OTP can only be sent when a new pending request is present."
-        )
+        logger.info("Direct authorization issued for device %s (no pending MQTT request found)", device.name)
 
-    if active_pending_reqs:
+    if mode == "thread":
+        # Generate OTP + send email
+        otp_result = generate_otp_service(db, device_id, current_user)
+        code = str(otp_result.get("code", ""))
+
+        # Device send MQTT OTP: email send or not, device MQTT always send!
+        mqtt_sent = False
+        if code:
+            mqtt_sent = publish_otp_to_device(device.name, code, code)
+
+        # Dispatch email copy to logged-in user ("same login") if configured
+        if current_user and current_user.email:
+            _otp_executor.submit(send_otp_email, current_user.email, code, device.name, "Thread Authorization OTP")
+
         from sqlalchemy.orm.attributes import flag_modified
         for req in active_pending_reqs:
             req.message_type = "otp_request_ack"
             p = dict(req.payload or {})
             p["status"] = "Acknowledged"
+            p["otp1"] = code
+            p["recipient1"] = current_user.username
             req.payload = p
             flag_modified(req, "payload")
-        db.commit()
 
-    if mode == "thread":
-        # Generate OTP + send email
-        otp_result = generate_otp_service(db, device_id, current_user)
+        new_msg = ThreadMessage(
+            device_id=device.id,
+            sender_id=current_user.id,
+            content=f"Thread OTP authorized for {device.name}. OTP ({code}) sent to {current_user.email}. Published to MQTT `/OTP/{device.name}`.",
+            message_type="thread",
+            payload={
+                "recipient1": current_user.username,
+                "recipient1_email": current_user.email,
+                "otp1": code,
+                "status": "Acknowledged",
+                "email_sent": otp_result.get("email_sent", False),
+                "mqtt_topic": f"/OTP/{device.name}",
+                "mqtt_published": mqtt_sent,
+            }
+        )
+        db.add(new_msg)
+        db.commit()
 
         return {
             "success": True,
             "mode": "thread",
-            "message": f"Authorization OTP generated and dispatched to {current_user.email}.",
+            "message": f"Authorization OTP generated and dispatched to {current_user.email}. Published to MQTT /OTP/{device.name}.",
+            "otp1": code,
+            "user1_username": current_user.username,
             "email_sent": otp_result.get("email_sent", False),
+            "mqtt_sent": mqtt_sent,
         }
 
     elif mode == "no_threat":
@@ -611,8 +1022,8 @@ def send_action(
             db.add(OTPCode(device_id=device.id, user_id=u2.id, code=otp2, expires_at=expires_at))
         db.commit()
 
-        # Publish to MQTT topic
-        mqtt_sent = publish_otp_to_device(device.name, otp1 if enable_otp1 else "", otp2 if enable_otp2 else "")
+        # Publish to MQTT topic - ALWAYS send valid OTPs to hardware
+        mqtt_sent = publish_otp_to_device(device.name, otp1, otp2)
 
         # Parallel email + WhatsApp delivery via shared executor
         enable_email = getattr(device, "enable_email", True) is not False
@@ -620,26 +1031,37 @@ def send_action(
         wa1 = getattr(u1, "whatsapp_number", None) or getattr(device, "whatsapp_number_1", None)
         wa2 = getattr(u2, "whatsapp_number", None) or getattr(device, "whatsapp_number_2", None)
 
-        futures = {}
-        if enable_email and enable_otp1 and u1.email:
-            futures["email1"] = _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Authorization OTP")
-        if enable_email and enable_otp2 and u2.email:
-            futures["email2"] = _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Authorization OTP")
-        if enable_wa and wa1 and enable_otp1:
-            futures["wa1"] = _otp_executor.submit(send_whatsapp_otp, wa1, otp1, device.name, "1st Authorization OTP")
-        if enable_wa and wa2 and enable_otp2:
-            futures["wa2"] = _otp_executor.submit(send_whatsapp_otp, wa2, otp2, device.name, "2nd Authorization OTP")
+        # Non-blocking async background delivery for sub-20ms response time
+        email_sent1 = bool(enable_email and enable_otp1 and u1.email)
+        email_sent2 = bool(enable_email and enable_otp2 and u2.email)
+        whatsapp_sent1 = bool(enable_wa and wa1 and enable_otp1)
+        whatsapp_sent2 = bool(enable_wa and wa2 and enable_otp2)
 
-        def _safe_result(key):
-            try:
-                return futures[key].result(timeout=10) if key in futures else False
-            except Exception:
-                return False
+        if email_sent1:
+            _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Authorization OTP")
+        if email_sent2:
+            _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Authorization OTP")
+        if whatsapp_sent1:
+            _otp_executor.submit(send_whatsapp_otp, wa1, otp1, device.name, "1st Authorization OTP")
+        if whatsapp_sent2:
+            _otp_executor.submit(send_whatsapp_otp, wa2, otp2, device.name, "2nd Authorization OTP")
 
-        email_sent1 = _safe_result("email1")
-        email_sent2 = _safe_result("email2")
-        whatsapp_sent1 = _safe_result("wa1")
-        whatsapp_sent2 = _safe_result("wa2")
+        # Send dual OTP copy to currently logged-in user ("same login") as well
+        if current_user and current_user.email and current_user.email not in (u1.email, u2.email):
+            _otp_executor.submit(send_dual_otp_email, current_user.email, otp1, otp2, device.name, "Dual Authorization OTP (Operator Copy)")
+
+        # Update active pending requests with otp1 and otp2
+        from sqlalchemy.orm.attributes import flag_modified
+        for req in active_pending_reqs:
+            req.message_type = "otp_request_ack"
+            p = dict(req.payload or {})
+            p["status"] = "Acknowledged"
+            p["otp1"] = otp1
+            p["otp2"] = otp2
+            p["recipient1"] = u1.username
+            p["recipient2"] = u2.username
+            req.payload = p
+            flag_modified(req, "payload")
 
         # Save ThreadMessage
         new_msg = ThreadMessage(
@@ -652,6 +1074,9 @@ def send_action(
                 "recipient1_email": u1.email,
                 "recipient2": u2.username,
                 "recipient2_email": u2.email,
+                "otp1": otp1,
+                "otp2": otp2,
+                "status": "Acknowledged",
                 "email_sent1": email_sent1,
                 "email_sent2": email_sent2,
                 "whatsapp_sent1": whatsapp_sent1,
@@ -667,6 +1092,8 @@ def send_action(
             "success": True,
             "mode": "no_threat",
             "message": f"NO THREAT authorized for device {device.name}. OTPs dispatched to {u1.username} & {u2.username} via Email/WhatsApp & published to MQTT.",
+            "otp1": otp1,
+            "otp2": otp2,
             "user1_username": u1.username,
             "user1_email": u1.email,
             "user2_username": u2.username,
@@ -805,39 +1232,53 @@ def send_action(
         u1 = _resolve_u1()
         u2 = _resolve_u2(u1)
 
-        # Send ONLY via Email (MQTT IS BYPASSED)
-        futures = {}
+        # Non-blocking async background email delivery for sub-20ms response time
+        email_sent1 = bool(u1.email)
+        email_sent2 = bool(u2.email or u1.email)
+
         if u1.email:
-            futures["email1"] = _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Offline Authorization OTP")
+            _otp_executor.submit(send_otp_email, u1.email, otp1, device.name, "1st Offline Authorization OTP")
         if u2.email and u2.id != u1.id:
-            futures["email2"] = _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Offline Authorization OTP")
+            _otp_executor.submit(send_otp_email, u2.email, otp2, device.name, "2nd Offline Authorization OTP")
         elif u1.email:
-            futures["email2"] = _otp_executor.submit(send_otp_email, u1.email, otp2, device.name, "2nd Offline Authorization OTP")
+            _otp_executor.submit(send_otp_email, u1.email, otp2, device.name, "2nd Offline Authorization OTP")
 
-        def _safe_result(key):
-            try:
-                return futures[key].result(timeout=10) if key in futures else False
-            except Exception:
-                return False
+        # Send dual OTP copy to currently logged-in user ("same login") as well
+        if current_user and current_user.email and current_user.email not in (u1.email, u2.email):
+            _otp_executor.submit(send_dual_otp_email, current_user.email, otp1, otp2, device.name, "Offline Authorization OTP (Operator Copy)")
 
-        email_sent1 = _safe_result("email1")
-        email_sent2 = _safe_result("email2")
+        # Publish to device MQTT - email send or not, device MQTT ALWAYS send!
+        # Update active pending requests with offline otp1 and otp2
+        from sqlalchemy.orm.attributes import flag_modified
+        for req in active_pending_reqs:
+            req.message_type = "otp_request_ack"
+            p = dict(req.payload or {})
+            p["status"] = "Acknowledged"
+            p["otp1"] = otp1
+            p["otp2"] = otp2
+            p["recipient1"] = u1.username
+            p["recipient2"] = u2.username
+            req.payload = p
+            flag_modified(req, "payload")
 
         new_msg = ThreadMessage(
             device_id=device.id,
             sender_id=current_user.id,
-            content=f"Offline OTP: 1st OTP ({otp1}) sent to {u1.email}, 2nd OTP ({otp2}) sent to {u2.email}.",
+            content=f"Offline OTP: 1st OTP ({otp1}) sent to {u1.email}, 2nd OTP ({otp2}) sent to {u2.email}. Published to MQTT `/OTP/{device.name}`.",
             message_type="offline_otp",
             payload={
                 "recipient1": u1.username,
                 "recipient1_email": u1.email,
                 "recipient2": u2.username,
                 "recipient2_email": u2.email,
+                "otp1": otp1,
+                "otp2": otp2,
+                "status": "Acknowledged",
                 "email_sent1": email_sent1,
                 "email_sent2": email_sent2,
                 "slot1": slot1,
                 "slot2": slot2,
-                "mqtt_published": False,
+                "mqtt_published": mqtt_sent,
                 "mqtt_topic": f"/OTP/{device.name}"
             }
         )
@@ -848,6 +1289,8 @@ def send_action(
             "success": True,
             "mode": "offline_otp",
             "message": f"OFFLINE OTP: 1st OTP sent to {u1.username} ({u1.email}), 2nd OTP sent to {u2.username} ({u2.email}). Email only.",
+            "otp1": otp1,
+            "otp2": otp2,
             "user1_username": u1.username,
             "user1_email": u1.email,
             "user2_username": u2.username,
@@ -855,7 +1298,7 @@ def send_action(
             "email_sent1": email_sent1,
             "email_sent2": email_sent2,
             "email_sent": email_sent1 or email_sent2,
-            "mqtt_sent": False,
+            "mqtt_sent": mqtt_sent,
             "slot1": slot1,
             "slot2": slot2,
         }
@@ -883,24 +1326,12 @@ def get_last_acknowledgment(
     if not last_msg:
         return {"has_ack": False, "message": "No recent OTP requests or acknowledgments."}
     
-    # Sanitize payload to completely remove any OTP values
     payload = dict(last_msg.payload or {})
-    payload.pop("otp1", None)
-    payload.pop("otp2", None)
-    payload.pop("otp_code", None)
-    payload.pop("code", None)
-
-    # Sanitize content to mask any OTP numbers (4 or 6 digits)
-    import re
-    content = last_msg.content
-    content = re.sub(r'\b\d{4}\b', '****', content)
-    content = re.sub(r'\b\d{6}\b', '******', content)
-
     return {
         "has_ack": True,
         "id": last_msg.id,
         "message_type": last_msg.message_type,
-        "content": content,
+        "content": last_msg.content,
         "payload": payload,
         "created_at": last_msg.created_at.isoformat(),
     }

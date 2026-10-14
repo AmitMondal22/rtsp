@@ -1,11 +1,11 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from contextlib import asynccontextmanager
 
 from app.database import engine, Base
 from app.config import settings
-from app.controllers import auth_controller, device_controller, camera_controller, bank_controller, otp_controller
+from app.controllers import auth_controller, device_controller, camera_controller, bank_controller, otp_controller, alert_controller, report_controller
 from app.streaming import start_health_monitor, stop_health_monitor
 from app.services.mqtt_service import start_mqtt_client, stop_mqtt_client
 
@@ -183,10 +183,13 @@ app = FastAPI(
 
 # Mount controllers (routers)
 app.include_router(auth_controller.router)
+app.include_router(auth_controller.auth_router)
 app.include_router(device_controller.router)
 app.include_router(camera_controller.router)
 app.include_router(bank_controller.router)
 app.include_router(otp_controller.router)
+app.include_router(alert_controller.router)
+app.include_router(report_controller.router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -199,8 +202,45 @@ def serve_login():
 
 
 @app.get("/dashboard")
+@app.get("/overview")
 def serve_dashboard():
     return FileResponse("templates/dashboard.html")
+
+
+@app.get("/rtsp")
+def serve_rtsp():
+    return FileResponse("templates/rtsp.html")
+
+
+@app.get("/devices")
+def serve_devices():
+    return FileResponse("templates/devices.html")
+
+
+@app.get("/requests")
+def serve_requests():
+    return FileResponse("templates/requests.html")
+
+
+@app.get("/alerts")
+def serve_alerts():
+    return FileResponse("templates/alerts.html")
+
+
+@app.get("/reports")
+def serve_reports():
+    return FileResponse("templates/reports.html")
+
+
+@app.get("/online-otp")
+@app.get("/manage-otp")
+def serve_online_otp():
+    return FileResponse("templates/online_otp.html")
+
+
+@app.get("/offline-otp")
+def serve_offline_otp():
+    return FileResponse("templates/offline_otp.html")
 
 
 @app.get("/banks")
@@ -208,20 +248,21 @@ def serve_banks():
     return FileResponse("templates/banks.html")
 
 
-@app.get("/users")
-def serve_users():
-    return FileResponse("templates/users.html")
-
-
 @app.get("/branches")
 def serve_branches():
     return FileResponse("templates/branches.html")
 
 
-@app.get("/manage-otp")
-@app.get("/offline-otp")
-def serve_offline_otp():
-    return FileResponse("templates/offline_otp.html")
+@app.get("/users")
+def serve_users():
+    return FileResponse("templates/users.html")
+
+
+@app.get("/logs")
+def serve_logs():
+    return FileResponse("templates/logs.html")
+
+
 
 
 @app.get("/health")

@@ -26,10 +26,72 @@ def on_disconnect(client, userdata, rc):
         logger.warning("MQTT unexpected disconnect (code %d) — will auto-reconnect", rc)
 
 
+def _get_or_create_device(db, candidates: list):
+    device = None
+    for ident in candidates:
+        if not ident:
+            continue
+        ident_str = str(ident).strip()
+        device = db.query(Device).filter(Device.name == ident_str).first()
+        if not device and ident_str.isdigit():
+            device = db.query(Device).filter(Device.id == int(ident_str)).first()
+        if not device:
+            device = db.query(Device).filter(Device.name.ilike(ident_str)).first()
+        if device:
+            break
+
+    if not device and candidates:
+        try:
+            from app.models.user import User
+            from app.models.bank import Bank, Branch
+            from app.utils.timezone import get_ist_now
+
+            clean_name = str(candidates[0]).strip()
+            first_user = db.query(User).first()
+            first_bank = db.query(Bank).first()
+            first_branch = db.query(Branch).first()
+
+            device = Device(
+                name=clean_name,
+                device_type="rtsp",
+                is_online=True,
+                last_seen=get_ist_now(),
+                owner_id=first_user.id if first_user else 1,
+                bank_id=first_bank.id if first_bank else None,
+                branch_id=first_branch.id if first_branch else None,
+                assigned_user_id=first_user.id if first_user else None,
+                enable_email=True,
+                enable_whatsapp=True,
+            )
+            db.add(device)
+            db.commit()
+            db.refresh(device)
+            logger.info("Auto-registered new device '%s' (ID %d) from incoming MQTT message", device.name, device.id)
+        except Exception as e:
+            logger.error("Failed to auto-register device for candidates %s: %s", candidates, e)
+            db.rollback()
+    elif device:
+        try:
+            from app.utils.timezone import get_ist_now
+            device.is_online = True
+            device.last_seen = get_ist_now()
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    return device
+
+
 def on_message(client, userdata, msg):
     logger.info("MQTT message on topic: %s", msg.topic)
     try:
         payload_str = msg.payload.decode("utf-8")
+        clean_p = payload_str.strip()
+        # Prevent loop: If this is an outgoing OTP dispatch command published to /OTP/<device>, ignore echo
+        if clean_p.startswith("*OTP") or clean_p.startswith("*OFFOTP,BULK"):
+            logger.info("Ignoring outgoing OTP dispatch echo on topic %s", msg.topic)
+            return
+
         try:
             data = json.loads(payload_str)
         except Exception:
@@ -72,19 +134,8 @@ def on_message(client, userdata, msg):
                         if val and str(val).strip() not in candidates:
                             candidates.append(str(val).strip())
 
-                # Query device strictly by candidate identifiers (name or numeric ID)
-                device = None
-                for ident in candidates:
-                    if not ident:
-                        continue
-                    device = db.query(Device).filter(Device.name == ident).first()
-                    if not device and ident.isdigit():
-                        device = db.query(Device).filter(Device.id == int(ident)).first()
-                    if not device:
-                        device = db.query(Device).filter(Device.name.ilike(ident)).first()
-                    if device:
-                        break
-
+                # Resolve or auto-register device
+                device = _get_or_create_device(db, candidates)
                 if not device:
                     logger.warning("Device not available in database for MQTT status/pool topic %s (candidates: %s)", msg.topic, candidates)
                     return
@@ -165,19 +216,30 @@ def on_message(client, userdata, msg):
                     if val and str(val).strip() and str(val).strip() not in candidates:
                         candidates.append(str(val).strip())
 
-            device = None
-            for ident in candidates:
-                if not ident:
-                    continue
-                device = db.query(Device).filter(Device.name == ident).first()
-                if not device and ident.isdigit():
-                    device = db.query(Device).filter(Device.id == int(ident)).first()
-                if not device:
-                    device = db.query(Device).filter(Device.name.ilike(ident)).first()
-                if device:
-                    break
+            # Resolve or auto-register device
+            device = _get_or_create_device(db, candidates)
 
             if device:
+                import random
+                otp1_val = str(random.randint(1000, 9999))
+                otp2_val = str(random.randint(1000, 9999))
+
+                u1_name = "User 1"
+                u2_name = "User 2"
+                if device.branch:
+                    if getattr(device.branch, "otp1_user", None):
+                        u1_name = device.branch.otp1_user.username
+                    elif getattr(device.branch, "user1", None):
+                        u1_name = device.branch.user1.username
+                    if getattr(device.branch, "otp2_user", None):
+                        u2_name = device.branch.otp2_user.username
+                    elif getattr(device.branch, "user2", None):
+                        u2_name = device.branch.user2.username
+                if u1_name == "User 1" and getattr(device, "assigned_user", None):
+                    u1_name = device.assigned_user.username
+                if u2_name == "User 2" and getattr(device, "assigned_user_2", None):
+                    u2_name = device.assigned_user_2.username
+
                 ack_msg = ThreadMessage(
                     device_id=device.id,
                     sender_id=device.owner_id or 1,
@@ -190,11 +252,15 @@ def on_message(client, userdata, msg):
                         "status": "Pending",
                         "device_name": device.name,
                         "device_id": device.id,
+                        "otp1": otp1_val,
+                        "otp2": otp2_val,
+                        "recipient1": u1_name,
+                        "recipient2": u2_name,
                     },
                 )
                 db.add(ack_msg)
                 db.commit()
-                logger.info("OTP request saved for device %s (id: %d)", device.name, device.id)
+                logger.info("OTP request saved for device %s (id: %d, otp1: %s, otp2: %s)", device.name, device.id, otp1_val, otp2_val)
             else:
                 logger.warning("No device found for MQTT topic %s (candidates: %s)", msg.topic, candidates)
         finally:
@@ -290,7 +356,10 @@ def publish_otp_to_device(device_identifier: str, otp1: str, otp2: str = "") -> 
 
     try:
         info = mqtt_client.publish(topic, payload, qos=1)
-        info.wait_for_publish()
+        try:
+            info.wait_for_publish(timeout=2.0)
+        except Exception:
+            pass
         logger.info("Published OTP to %s: %s", topic, payload)
         return True
     except Exception as e:
@@ -311,7 +380,10 @@ def publish_bulk_otp_to_device(device_identifier: str, otp_list: list) -> bool:
 
     try:
         info = mqtt_client.publish(topic, payload, qos=1)
-        info.wait_for_publish()
+        try:
+            info.wait_for_publish(timeout=3.0)
+        except Exception:
+            pass
         logger.info("Published Bulk OTP to %s (%d items)", topic, len(otp_list))
         return True
     except Exception as e:

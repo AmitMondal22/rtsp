@@ -38,9 +38,9 @@ def sanitize_rtsp_url(url: str) -> str:
 
 def build_rtsp_url(device: Device) -> str:
     """Return the clean RTSP stream connection URL directly from database."""
-    if device.rtsp_url and device.rtsp_url.strip():
+    if device and device.rtsp_url and device.rtsp_url.strip():
         return sanitize_rtsp_url(device.rtsp_url)
-    return "rtsp://localhost:554/stream1"
+    return ""
 
 
 def create_device_service(db: Session, device_data: DeviceCreate, user: User) -> dict:
@@ -190,12 +190,15 @@ def delete_device_service(db: Session, device_id: int) -> None:
     db.query(ThreadMessage).filter(ThreadMessage.device_id == device_id).delete(synchronize_session=False)
     db.query(OTPCode).filter(OTPCode.device_id == device_id).delete(synchronize_session=False)
     db.query(DeviceOfflineOTP).filter(DeviceOfflineOTP.device_id == device_id).delete(synchronize_session=False)
+    # Optional raw deletes with savepoints so aborted queries don't poison Postgres transaction
     try:
-        db.execute(text("DELETE FROM offline_otps WHERE device_id = :did"), {"did": device_id})
+        with db.begin_nested():
+            db.execute(text("DELETE FROM offline_otps WHERE device_id = :did"), {"did": device_id})
     except Exception:
         pass
     try:
-        db.execute(text("DELETE FROM device_offline_otps WHERE device_id = :did"), {"did": device_id})
+        with db.begin_nested():
+            db.execute(text("DELETE FROM device_offline_otps WHERE device_id = :did"), {"did": device_id})
     except Exception:
         pass
     db.delete(device)

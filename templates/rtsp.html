@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Live RTSP Monitoring — ANG Smart Access" />
+    <title>Live RTSP Monitoring — ANG Smart Access</title>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    <!-- Tailwind CSS v3 CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="/static/style.css?v=6.0" />
+</head>
+
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
+
+    <!-- —— Top Header Navigation Bar —— -->
+    <header class="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between shrink-0 select-none z-30">
+        <!-- Left: Organization / Bank Selector -->
+        <div class="flex items-center space-x-3">
+            <span class="text-xs text-slate-500 font-medium">Organization</span>
+            <div class="relative">
+                <select id="organization-select" class="appearance-none bg-slate-50 border border-slate-200 rounded-md pl-3 pr-8 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-xs">
+                    <option value="">Default Organization</option>
+                </select>
+                <i class="bi bi-chevron-down absolute right-2.5 top-2.5 text-[10px] text-slate-400 pointer-events-none"></i>
+            </div>
+        </div>
+
+        <!-- Right: Auditor / User Info & Sign out -->
+        <div class="flex items-center space-x-4">
+            <div class="hidden sm:flex flex-col text-right leading-none pr-3 border-r border-slate-200 font-mono text-[11px]">
+                <span id="nav-clock" class="text-slate-800 font-bold">--:--:--</span>
+                <span id="nav-date" class="text-slate-400 text-[10px] mt-0.5">----/--/--</span>
+            </div>
+            <span id="user-role-badge" class="bg-sky-100 text-sky-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-sky-200">USER</span>
+            <span id="user-display-email" class="text-xs text-slate-600 font-medium truncate max-w-[200px]">Loading...</span>
+            <button id="logout-btn" class="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center transition cursor-pointer px-2.5 py-1 rounded-md hover:bg-slate-100">
+                <i class="bi bi-box-arrow-right mr-1.5 text-slate-500"></i> Sign out
+            </button>
+        </div>
+    </header>
+
+    <!-- —— Main Workspace Body —— -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- —— Left Navigation Sidebar —— -->
+        <aside class="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4">
+            <div>
+                <!-- Brand Header -->
+                <div class="flex items-center space-x-3 mb-5 px-2">
+                    <div class="w-9 h-9 rounded-lg bg-sky-600 flex items-center justify-center text-white text-lg shadow-xs">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-sm font-bold text-slate-900 tracking-tight leading-none">ANG Smart Access</h1>
+                        <span class="text-[11px] text-slate-400 font-medium">Techavo Systems</span>
+                    </div>
+                </div>
+
+                <!-- Navigation Links -->
+                <nav class="space-y-0.5">
+                    <div class="nav-section-title">Operations</div>
+                    <a href="/dashboard" id="nav-overview" class="nav-item">
+                        <i class="bi bi-grid-fill"></i> Overview Dashboard
+                    </a>
+                    <a href="/rtsp" id="nav-rtsp" class="nav-item active">
+                        <i class="bi bi-camera-video-fill"></i> Live RTSP Monitoring
+                    </a>
+                    <a href="/requests" id="nav-requests" class="nav-item">
+                        <i class="bi bi-envelope-paper-fill"></i> Pending Access Requests
+                    </a>
+                    <a href="/alerts" id="nav-alerts" class="nav-item">
+                        <i class="bi bi-shield-exclamation"></i> Security Alerts
+                    </a>
+                    <a href="/reports" id="nav-reports" class="nav-item">
+                        <i class="bi bi-bar-chart-fill"></i> Reports
+                    </a>
+
+                    <div class="nav-section-title">Infrastructure</div>
+                    <a href="/devices" id="nav-devices" class="nav-item">
+                        <i class="bi bi-cpu-fill"></i> Device Management
+                    </a>
+
+                    <div class="nav-section-title">OTP Management</div>
+                    <a href="/online-otp" id="nav-online-otp" class="nav-item">
+                        <i class="bi bi-key-fill"></i> Online OTP Requests
+                    </a>
+                    <a href="/offline-otp" id="nav-offline-otp" class="nav-item">
+                        <i class="bi bi-database-fill"></i> Bulk Offline OTP Database
+                    </a>
+
+                    <div class="nav-section-title">Administration</div>
+                    <a href="/banks" id="nav-banks" class="nav-item">
+                        <i class="bi bi-bank"></i> Bank Management
+                    </a>
+                    <a href="/branches" id="nav-branches" class="nav-item">
+                        <i class="bi bi-diagram-3-fill"></i> Branch Management
+                    </a>
+                    <a href="/users" id="nav-users" class="nav-item">
+                        <i class="bi bi-people-fill"></i> User Management
+                    </a>
+                    <a href="/logs" id="nav-logs" class="nav-item">
+                        <i class="bi bi-journal-text"></i> Event Logs & Audit
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Bottom System Status -->
+            <div class="pt-3 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <span>ANG System v2.0</span>
+                <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Connected</span>
+            </div>
+        </aside>
+
+        <!-- —— Main Content: Live RTSP Monitoring —— -->
+        <main class="flex-1 bg-[#f8fafc] overflow-y-auto p-6 flex flex-col min-w-0">
+            <section class="flex flex-col space-y-6">
+                <!-- Page Header with Site Filter -->
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 tracking-tight">Live RTSP Monitoring</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Each tile shows the camera stream and the access device it verifies.</p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="relative">
+                            <select id="site-filter-select" class="appearance-none bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500 shadow-xs cursor-pointer">
+                                <option value="all">All Sites & Branches</option>
+                            </select>
+                            <i class="bi bi-chevron-down absolute right-2.5 top-2 text-[10px] text-slate-400 pointer-events-none"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Camera Grid with Pre-rendered Wireframe Skeleton Cards -->
+                <div id="camera-tiles-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Authentic Wireframe Skeleton Loading Cards -->
+                    <div class="camera-skeleton-card bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
+                        <div class="relative bg-slate-950 aspect-video overflow-hidden flex flex-col items-center justify-center skeleton-shimmer-dark">
+                            <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800/80 flex items-center justify-center text-slate-500 mb-2.5 shadow-inner">
+                                <i class="bi bi-camera-video text-xl text-slate-400"></i>
+                            </div>
+                            <div class="h-2.5 w-32 bg-slate-800/90 rounded-full mb-1.5"></div>
+                            <div class="h-2 w-20 bg-slate-800/50 rounded-full"></div>
+                            <div class="absolute top-2.5 left-2.5 h-5 w-20 bg-slate-900/90 rounded border border-slate-800/70"></div>
+                            <div class="absolute top-2.5 right-2.5 h-6 w-14 bg-slate-900/90 rounded border border-slate-800/70"></div>
+                        </div>
+                        <div class="p-4 space-y-3 bg-white flex-1 flex flex-col justify-between">
+                            <div class="space-y-2.5">
+                                <div class="flex items-center justify-between">
+                                    <div class="h-3.5 w-32 bg-slate-200 rounded skeleton-shimmer"></div>
+                                    <div class="h-4 w-14 bg-slate-200 rounded-full skeleton-shimmer"></div>
+                                </div>
+                                <div class="h-2.5 w-48 bg-slate-100 rounded skeleton-shimmer"></div>
+                                <div class="flex items-center justify-between pt-1">
+                                    <div class="h-2.5 w-24 bg-slate-100 rounded skeleton-shimmer"></div>
+                                    <div class="h-2.5 w-16 bg-slate-100 rounded skeleton-shimmer"></div>
+                                </div>
+                            </div>
+                            <div class="pt-2.5 border-t border-slate-100 flex items-center gap-2">
+                                <div class="h-8 flex-1 bg-slate-200 rounded-lg skeleton-shimmer"></div>
+                                <div class="h-8 w-8 bg-slate-100 rounded-lg skeleton-shimmer"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="camera-skeleton-card bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
+                        <div class="relative bg-slate-950 aspect-video overflow-hidden flex flex-col items-center justify-center skeleton-shimmer-dark">
+                            <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800/80 flex items-center justify-center text-slate-500 mb-2.5 shadow-inner">
+                                <i class="bi bi-camera-video text-xl text-slate-400"></i>
+                            </div>
+                            <div class="h-2.5 w-36 bg-slate-800/90 rounded-full mb-1.5"></div>
+                            <div class="h-2 w-24 bg-slate-800/50 rounded-full"></div>
+                            <div class="absolute top-2.5 left-2.5 h-5 w-20 bg-slate-900/90 rounded border border-slate-800/70"></div>
+                            <div class="absolute top-2.5 right-2.5 h-6 w-14 bg-slate-900/90 rounded border border-slate-800/70"></div>
+                        </div>
+                        <div class="p-4 space-y-3 bg-white flex-1 flex flex-col justify-between">
+                            <div class="space-y-2.5">
+                                <div class="flex items-center justify-between">
+                                    <div class="h-3.5 w-36 bg-slate-200 rounded skeleton-shimmer"></div>
+                                    <div class="h-4 w-14 bg-slate-200 rounded-full skeleton-shimmer"></div>
+                                </div>
+                                <div class="h-2.5 w-44 bg-slate-100 rounded skeleton-shimmer"></div>
+                                <div class="flex items-center justify-between pt-1">
+                                    <div class="h-2.5 w-24 bg-slate-100 rounded skeleton-shimmer"></div>
+                                    <div class="h-2.5 w-16 bg-slate-100 rounded skeleton-shimmer"></div>
+                                </div>
+                            </div>
+                            <div class="pt-2.5 border-t border-slate-100 flex items-center gap-2">
+                                <div class="h-8 flex-1 bg-slate-200 rounded-lg skeleton-shimmer"></div>
+                                <div class="h-8 w-8 bg-slate-100 rounded-lg skeleton-shimmer"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="camera-skeleton-card bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
+                        <div class="relative bg-slate-950 aspect-video overflow-hidden flex flex-col items-center justify-center skeleton-shimmer-dark">
+                            <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800/80 flex items-center justify-center text-slate-500 mb-2.5 shadow-inner">
+                                <i class="bi bi-camera-video text-xl text-slate-400"></i>
+                            </div>
+                            <div class="h-2.5 w-28 bg-slate-800/90 rounded-full mb-1.5"></div>
+                            <div class="h-2 w-16 bg-slate-800/50 rounded-full"></div>
+                            <div class="absolute top-2.5 left-2.5 h-5 w-20 bg-slate-900/90 rounded border border-slate-800/70"></div>
+                            <div class="absolute top-2.5 right-2.5 h-6 w-14 bg-slate-900/90 rounded border border-slate-800/70"></div>
+                        </div>
+                        <div class="p-4 space-y-3 bg-white flex-1 flex flex-col justify-between">
+                            <div class="space-y-2.5">
+                                <div class="flex items-center justify-between">
+                                    <div class="h-3.5 w-28 bg-slate-200 rounded skeleton-shimmer"></div>
+                                    <div class="h-4 w-14 bg-slate-200 rounded-full skeleton-shimmer"></div>
+                                </div>
+                                <div class="h-2.5 w-52 bg-slate-100 rounded skeleton-shimmer"></div>
+                                <div class="flex items-center justify-between pt-1">
+                                    <div class="h-2.5 w-24 bg-slate-100 rounded skeleton-shimmer"></div>
+                                    <div class="h-2.5 w-16 bg-slate-100 rounded skeleton-shimmer"></div>
+                                </div>
+                            </div>
+                            <div class="pt-2.5 border-t border-slate-100 flex items-center gap-2">
+                                <div class="h-8 flex-1 bg-slate-200 rounded-lg skeleton-shimmer"></div>
+                                <div class="h-8 w-8 bg-slate-100 rounded-lg skeleton-shimmer"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Application Script -->
+    <script src="/static/nav.js?v=2.0"></script>
+    <script src="/static/app.js?v=17.0"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (typeof window.initHeaderClock === 'function') window.initHeaderClock();
+            if (typeof window.checkUserRoleAndPermissions === 'function') window.checkUserRoleAndPermissions();
+            if (typeof window.loadOrganizationsDropdown === 'function') await window.loadOrganizationsDropdown();
+            if (typeof window.renderRtspSkeletonLoading === 'function') window.renderRtspSkeletonLoading(6);
+            if (typeof window.loadDevices === 'function') await window.loadDevices();
+        });
+    </script>
+</body>
+</html>
+

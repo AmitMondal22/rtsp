@@ -76,60 +76,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
     build100Inputs();
 
-    // Clock
-    function updateClock() {
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString('en-US', { hour12: true });
-        const dateStr = now.toISOString().split('T')[0].replace(/-/g, '/');
-        if (qs("#nav-clock")) qs("#nav-clock").textContent = timeStr;
-        if (qs("#nav-date")) qs("#nav-date").textContent = dateStr;
-    }
-    updateClock();
-    setInterval(updateClock, 1000);
-
-    // User profile dropdown & logout
-    const userMenuBtn = qs("#user-menu-btn");
-    const userDropdownMenu = qs("#user-dropdown-menu");
-    if (userMenuBtn && userDropdownMenu) {
-        userMenuBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            userDropdownMenu.classList.toggle("hidden");
-        });
-        document.addEventListener("click", () => userDropdownMenu.classList.add("hidden"));
-    }
-
-    const logoutBtn = qs("#logout-btn");
-    if (logoutBtn) {
-        logoutBtn.addEventListener("click", () => {
-            localStorage.removeItem("token");
-            sessionStorage.removeItem("token");
-            window.location.href = "/login";
-        });
-    }
-
-    // Load current user profile
-    fetch("/api/auth/me", { headers: authHeaders })
-        .then(res => res.json())
-        .then(user => {
-            if (user) {
-                if (qs("#user-dropdown-username")) qs("#user-dropdown-username").textContent = user.username || user.email;
-                if (qs("#user-dropdown-role")) qs("#user-dropdown-role").textContent = (user.role || "USER").toUpperCase();
-            }
-        })
-        .catch(() => {});
-
     // Load Banks
     function loadBanks() {
-        fetch("/api/banks", { headers: authHeaders })
-            .then(res => res.json())
+        fetch("/api/banks/", { headers: authHeaders })
+            .then(res => {
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                return res.json();
+            })
             .then(banks => {
                 bankSelect.innerHTML = `<option value="">-- Choose Bank --</option>`;
-                banks.forEach(b => {
-                    bankSelect.innerHTML += `<option value="${b.id}">${b.name}</option>`;
-                });
+                if (Array.isArray(banks)) {
+                    banks.forEach(b => {
+                        bankSelect.innerHTML += `<option value="${b.id}">${b.name}</option>`;
+                    });
+                    if (banks.length > 0) {
+                        bankSelect.value = banks[0].id;
+                        bankSelect.dispatchEvent(new Event("change"));
+                    }
+                }
             })
             .catch(err => {
-                showToast("Failed to load banks: " + err, "error");
+                showToast("Failed to load banks: " + err.message, "error");
             });
     }
 
@@ -146,14 +113,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (currentBankId) {
             fetch(`/api/banks/${currentBankId}/branches`, { headers: authHeaders })
-                .then(res => res.json())
+                .then(res => {
+                    if (!res.ok) throw new Error("HTTP " + res.status);
+                    return res.json();
+                })
                 .then(branches => {
                     branchSelect.innerHTML = `<option value="">-- Choose Branch --</option>`;
-                    branches.forEach(br => {
-                        branchSelect.innerHTML += `<option value="${br.id}">${br.name}</option>`;
-                    });
+                    if (Array.isArray(branches)) {
+                        branches.forEach(br => {
+                            branchSelect.innerHTML += `<option value="${br.id}">${br.name}</option>`;
+                        });
+                        if (branches.length > 0) {
+                            branchSelect.value = branches[0].id;
+                            branchSelect.dispatchEvent(new Event("change"));
+                        }
+                    }
                 })
-                .catch(err => showToast("Failed to load branches", "error"));
+                .catch(err => showToast("Failed to load branches: " + err.message, "error"));
         }
     });
 
@@ -165,9 +141,13 @@ document.addEventListener("DOMContentLoaded", () => {
         hideDeviceContainer();
 
         if (currentBranchId) {
-            fetch("/api/devices", { headers: authHeaders })
-                .then(res => res.json())
+            fetch("/api/devices/", { headers: authHeaders })
+                .then(res => {
+                    if (!res.ok) throw new Error("HTTP " + res.status);
+                    return res.json();
+                })
                 .then(devices => {
+                    if (!Array.isArray(devices)) devices = [];
                     const branchDevs = devices.filter(d => String(d.branch_id) === String(currentBranchId));
                     deviceSelect.innerHTML = `<option value="">-- Choose Device --</option>`;
                     if (branchDevs.length === 0) {
@@ -176,8 +156,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     branchDevs.forEach(d => {
                         deviceSelect.innerHTML += `<option value="${d.id}" data-name="${d.name}">${d.name} (ID: ${d.id})</option>`;
                     });
+                    if (branchDevs.length > 0) {
+                        deviceSelect.value = branchDevs[0].id;
+                        deviceSelect.dispatchEvent(new Event("change"));
+                    }
                 })
-                .catch(err => showToast("Failed to load devices", "error"));
+                .catch(err => showToast("Failed to load devices: " + err.message, "error"));
         }
     });
 

@@ -123,71 +123,31 @@ function showToast(message, type = "success") {
     }, 3500);
 }
 
-// Dynamic Topbar Clock
-function updateTopbarClock() {
-    const clockEl = qs("#nav-clock");
-    const dateEl = qs("#nav-date");
-    if (!clockEl || !dateEl) return;
-
-    const now = new Date();
-    clockEl.textContent = now.toLocaleTimeString();
-    dateEl.textContent = now.toISOString().split("T")[0].replace(/-/g, "/");
-}
-setInterval(updateTopbarClock, 1000);
-updateTopbarClock();
-
 // Load Logged-in User
+// nav.js handles auth check, header clock, logout, dropdown, and role-based sidebar visibility.
+// We sync state.user from window._navUser set by nav.js.
 async function initUser() {
-    try {
-        state.user = await api("/api/users/me");
-        qs("#user-dropdown-username").textContent = state.user.username;
-        qs("#user-dropdown-role").textContent = state.user.role.toUpperCase();
+    for (let i = 0; i < 30; i++) {
+        if (window._navUser) break;
+        await new Promise(r => setTimeout(r, 100));
+    }
 
-        // Redirect regular user away from User Management
-        if (state.user.role === "user") {
-            window.location.href = "/dashboard";
+    if (window._navUser) {
+        state.user = window._navUser;
+    } else {
+        try {
+            state.user = await api("/api/users/me");
+        } catch (err) {
+            console.error("User init failed:", err);
+            localStorage.removeItem("token");
+            window.location.href = "/";
             return;
         }
-
-        const navBanks = qs("#nav-banks-link");
-        const navBranches = qs("#nav-branches-link");
-        if (state.user.role === "super_admin" || state.user.role === "admin") {
-            if (navBanks) navBanks.classList.remove("hidden");
-            if (navBranches) navBranches.classList.remove("hidden");
-        } else if (state.user.role === "bank_admin") {
-            if (navBranches) navBranches.classList.remove("hidden");
-        }
-
-        await loadBanks();
-        await loadBranches();
-        await loadBankUsers();
-    } catch (err) {
-        console.error("User init failed:", err);
-        localStorage.removeItem("token");
-        window.location.href = "/login";
     }
-}
 
-// User Profile Dropdown Toggle
-const userMenuBtn = qs("#user-menu-btn");
-const userDropdownMenu = qs("#user-dropdown-menu");
-if (userMenuBtn && userDropdownMenu) {
-    userMenuBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        userDropdownMenu.classList.toggle("hidden");
-    });
-    document.addEventListener("click", () => {
-        userDropdownMenu.classList.add("hidden");
-    });
-}
-
-// Logout
-const logoutBtn = qs("#logout-btn");
-if (logoutBtn) {
-    logoutBtn.addEventListener("click", () => {
-        localStorage.removeItem("token");
-        window.location.href = "/login";
-    });
+    await loadBanks();
+    await loadBranches();
+    await loadBankUsers();
 }
 
 // Fetch & Render Banks Dropdown for both Add and Edit modals
@@ -266,29 +226,29 @@ async function loadBankUsers() {
             const branchDisplay = u.branch_name || (u.branch_id ? `Branch #${u.branch_id}` : "—");
 
             const roleBadgeClass = {
-                super_admin: "bg-brand-purple/20 text-brand-purple",
-                admin: "bg-indigo-500/20 text-indigo-400",
-                bank_admin: "bg-brand-blue/20 text-brand-blue",
-                user: "bg-slate-700/50 text-slate-300"
-            }[u.role] || "bg-brand-blue/20 text-brand-blue";
+                super_admin: "bg-purple-100 text-purple-700 border border-purple-200",
+                admin: "bg-sky-100 text-sky-700 border border-sky-200",
+                bank_admin: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+                user: "bg-slate-100 text-slate-700 border border-slate-200"
+            }[u.role] || "bg-sky-100 text-sky-700 border border-sky-200";
 
             return `
-                <tr class="hover:bg-brand-border/20 transition">
-                    <td class="py-3 pr-3 font-semibold text-brand-blue">${u.id}</td>
-                    <td class="py-3 pr-3 font-medium text-white">${escapeHtml(u.username)}</td>
-                    <td class="py-3 pr-3 text-slate-300">${escapeHtml(u.email)}</td>
-                    <td class="py-3 pr-3 text-slate-400 font-mono text-xs">${escapeHtml(u.whatsapp_number || "—")}</td>
-                    <td class="py-3 pr-3 text-xs text-slate-300">
-                        <span class="block font-semibold text-white">${escapeHtml(bankDisplay)}</span>
-                        <span class="block text-brand-muted">${escapeHtml(branchDisplay)}</span>
+                <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                    <td class="py-3 pr-3 font-bold text-sky-600">${u.id}</td>
+                    <td class="py-3 pr-3 font-semibold text-slate-900">${escapeHtml(u.username)}</td>
+                    <td class="py-3 pr-3 text-slate-600">${escapeHtml(u.email)}</td>
+                    <td class="py-3 pr-3 text-slate-500 font-mono text-xs">${escapeHtml(u.whatsapp_number || "—")}</td>
+                    <td class="py-3 pr-3 text-xs">
+                        <span class="block font-semibold text-slate-800">${escapeHtml(bankDisplay)}</span>
+                        <span class="block text-slate-400">${escapeHtml(branchDisplay)}</span>
                     </td>
                     <td class="py-3 pr-3"><span class="badge uppercase px-2 py-0.5 rounded text-[10px] font-bold ${roleBadgeClass}">${u.role}</span></td>
                     <td class="py-3 pr-3">${statusBadge}</td>
                     <td class="py-3 text-right space-x-2">
-                        <button class="px-2.5 py-1 bg-brand-blue/20 hover:bg-brand-blue/30 text-brand-blue rounded text-xs transition" onclick="openEditUserModal(${u.id})">
+                        <button class="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-md text-xs font-semibold transition cursor-pointer" onclick="openEditUserModal(${u.id})">
                             <i class="bi bi-pencil-fill mr-1"></i> Edit
                         </button>
-                        <button class="px-2.5 py-1 bg-brand-danger/20 hover:bg-brand-danger/30 text-brand-danger rounded text-xs transition" onclick="deleteUser(${u.id}, '${escapeHtml(u.username).replace(/'/g, "\\'")}')">
+                        <button class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md text-xs font-semibold transition cursor-pointer" onclick="deleteUser(${u.id}, '${escapeHtml(u.username).replace(/'/g, "\\'")}')">
                             <i class="bi bi-trash-fill mr-1"></i> Delete
                         </button>
                     </td>

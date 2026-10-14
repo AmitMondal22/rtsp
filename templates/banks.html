@@ -4,138 +4,156 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Bank Management – IOTBLITZ" />
-    <title>Bank Management – IOTBLITZ</title>
+    <meta name="description" content="Bank Management – ANG Smart Access" />
+    <title>Bank Management — ANG Smart Access</title>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            purple: '#9060ff',
-                            blue: '#1a8cff',
-                            darkBg: '#111217',
-                            sidebar: '#1c1d22',
-                            iconbar: '#15161b',
-                            cardBg: '#1e1f25',
-                            border: '#2b2c33',
-                            muted: '#85868e',
-                            danger: '#ef4444',
-                            success: '#10b981',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="/static/style.css?v=1.2" />
+    <link rel="stylesheet" href="/static/style.css?v=3.0" />
 </head>
 
-<body class="bg-brand-darkBg text-slate-100 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-brand-blue selection:text-white">
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-sky-100 selection:text-sky-700">
 
-    <!-- Top Navigation Bar -->
-    <nav class="bg-brand-sidebar border-b border-brand-border px-4 py-2 flex items-center justify-between shrink-0 select-none">
+    <!-- ── Top Header Navigation ── -->
+    <header class="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between shrink-0 select-none z-30">
+        <!-- Left: Status & Branch Indicator -->
         <div class="flex items-center space-x-4">
-            <a class="text-brand-purple font-bold tracking-widest text-xs uppercase flex items-center" href="/dashboard">
-                <i class="bi bi-camera-video-fill mr-2.5"></i> IOTBLITZ
-            </a>
-            <div class="border-l border-brand-border pl-4 flex items-center space-x-1 text-brand-muted text-xs">
-                <i class="bi bi-bank2 mr-1 text-brand-blue"></i>
-                <span class="text-white font-semibold">Bank Management</span>
+            <span class="flex items-center text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span> SYSTEM ONLINE
+            </span>
+            <div class="hidden sm:flex items-center space-x-1.5 text-xs text-slate-500">
+                <i class="bi bi-bank text-slate-400"></i>
+                <span class="font-medium">Section:</span>
+                <span class="font-bold text-slate-700">Bank Management</span>
             </div>
         </div>
 
+        <!-- Right: Auditor / User Info & Sign out -->
         <div class="flex items-center space-x-4">
-            <!-- Account Dropdown -->
-            <div class="relative inline-block text-left" id="user-profile-dropdown">
-                <button class="hover:text-white transition cursor-pointer flex items-center focus:outline-none"
-                    id="user-menu-btn" title="User Profile">
-                    <i class="bi bi-person-circle text-slate-300 hover:text-white text-lg"></i>
-                </button>
-                <div id="user-dropdown-menu"
-                    class="absolute right-0 mt-2.5 w-48 bg-brand-cardBg border border-brand-border rounded shadow-2xl py-2 z-50 hidden">
-                    <div class="px-3 py-1 border-b border-brand-border text-brand-muted text-[9px] font-bold uppercase tracking-wider">Account Info</div>
-                    <div class="px-3 py-2 text-[11px] text-slate-300">
-                        <span class="block font-semibold text-white truncate" id="user-dropdown-username">Username</span>
-                        <span class="block text-brand-muted text-[10px] mt-0.5" id="user-dropdown-role">ROLE</span>
-                    </div>
-                    <div class="border-t border-brand-border my-1"></div>
-                    <button id="logout-btn" class="w-full text-left px-3 py-1.5 hover:bg-brand-border hover:text-white text-[11px] text-brand-danger transition flex items-center">
-                        <i class="bi bi-box-arrow-right mr-2"></i> Log Out
-                    </button>
-                </div>
+            <!-- Digital Clock Display -->
+            <div class="hidden sm:flex flex-col text-right leading-none pr-3 border-r border-slate-200 font-mono text-[11px]">
+                <span id="nav-clock" class="text-slate-800 font-bold">--:--:--</span>
+                <span id="nav-date" class="text-slate-400 text-[10px] mt-0.5">----/--/--</span>
             </div>
 
-            <!-- Clock -->
-            <div class="border-l border-brand-border pl-4 text-right leading-tight font-mono select-none" style="font-size: 10px;">
-                <div id="nav-clock" class="text-white font-semibold">12:34:00 AM</div>
-                <div id="nav-date" class="text-brand-muted">2026/07/15</div>
-            </div>
+            <!-- Dynamic Role Badge -->
+            <span id="user-role-badge" class="bg-sky-100 text-sky-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-sky-200">USER</span>
+
+            <!-- Dynamic User Email / Username -->
+            <span id="user-display-email" class="text-xs text-slate-600 font-medium truncate max-w-[200px]">Loading...</span>
+
+            <!-- Sign Out Button -->
+            <button id="logout-btn" class="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center transition cursor-pointer px-2.5 py-1 rounded-md hover:bg-slate-100">
+                <i class="bi bi-box-arrow-right mr-1.5 text-slate-500"></i> Sign out
+            </button>
         </div>
-    </nav>
+    </header>
 
     <!-- Page Body -->
     <div class="flex flex-1 overflow-hidden">
 
-        <!-- Left Icon Sidebar -->
-        <aside class="w-14 bg-brand-iconbar border-r border-brand-border flex flex-col items-center py-4 space-y-4 shrink-0">
-            <a href="/dashboard" title="Cameras & Live Feed"
-                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
-                <i class="bi bi-camera-video-fill text-base"></i>
-            </a>
-            <a href="/banks" title="Bank Management"
-                class="w-8 h-8 rounded flex items-center justify-center text-white bg-brand-blue active:scale-95 transition">
-                <i class="bi bi-bank text-base"></i>
-            </a>
-            <a href="/branches" id="nav-branches-link" title="Branch Management"
-                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
-                <i class="bi bi-diagram-3-fill text-base"></i>
-            </a>
-            <a href="/users" id="nav-users-link" title="User Management"
-                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition hidden">
-                <i class="bi bi-people text-base"></i>
-            </a>
-            <a href="/manage-otp" title="Manage OTP"
-                class="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-brand-blue/20 active:scale-95 transition">
-                <i class="bi bi-key-fill text-base"></i>
-            </a>
+        <!-- ── Left Navigation Sidebar ── -->
+        <aside class="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4">
+            <div>
+                <!-- Brand Header -->
+                <div class="flex items-center space-x-3 mb-5 px-2">
+                    <div class="w-9 h-9 rounded-lg bg-sky-600 flex items-center justify-center text-white text-lg shadow-xs">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-sm font-bold text-slate-900 tracking-tight leading-none">ANG Smart Access</h1>
+                        <span class="text-[11px] text-slate-400 font-medium">Techavo Systems</span>
+                    </div>
+                </div>
+
+                <!-- Navigation Links -->
+                <nav class="space-y-0.5">
+                    <!-- SECTION: OPERATIONS -->
+                    <div class="nav-section-title">Operations</div>
+                    <a href="/dashboard" id="nav-overview" class="nav-item">
+                        <i class="bi bi-grid-fill"></i> Overview Dashboard
+                    </a>
+                    <a href="/rtsp" id="nav-rtsp" class="nav-item">
+                        <i class="bi bi-camera-video-fill"></i> Live RTSP Monitoring
+                    </a>
+                    <a href="/requests" id="nav-requests" class="nav-item">
+                        <i class="bi bi-envelope-paper-fill"></i> Pending Access Requests
+                    </a>
+                    <a href="/alerts" id="nav-alerts" class="nav-item">
+                        <i class="bi bi-shield-exclamation"></i> Security Alerts
+                    </a>
+                    <a href="/reports" id="nav-reports" class="nav-item">
+                        <i class="bi bi-bar-chart-fill"></i> Reports
+                    </a>
+
+                    <!-- SECTION: INFRASTRUCTURE -->
+                    <div class="nav-section-title">Infrastructure</div>
+                    <a href="/devices" id="nav-devices" class="nav-item">
+                        <i class="bi bi-cpu-fill"></i> Device Management
+                    </a>
+
+                    <!-- SECTION: OTP -->
+                    <div class="nav-section-title">OTP Management</div>
+                    <a href="/online-otp" id="nav-online-otp" class="nav-item">
+                        <i class="bi bi-key-fill"></i> Online OTP Requests
+                    </a>
+                    <a href="/offline-otp" id="nav-offline-otp" class="nav-item">
+                        <i class="bi bi-database-fill"></i> Bulk Offline OTP Database
+                    </a>
+
+                    <!-- SECTION: ADMINISTRATION -->
+                    <div class="nav-section-title">Administration</div>
+                    <a href="/banks" id="nav-banks" class="nav-item active">
+                        <i class="bi bi-bank"></i> Bank Management
+                    </a>
+                    <a href="/branches" id="nav-branches" class="nav-item">
+                        <i class="bi bi-diagram-3-fill"></i> Branch Management
+                    </a>
+                    <a href="/users" id="nav-users" class="nav-item">
+                        <i class="bi bi-people-fill"></i> User Management
+                    </a>
+                    <a href="/logs" id="nav-logs" class="nav-item">
+                        <i class="bi bi-journal-text"></i> Event Logs & Audit
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Bottom System Status -->
+            <div class="pt-3 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <span>ANG System v2.0</span>
+                <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Connected</span>
+            </div>
         </aside>
 
         <!-- Main Content -->
-        <main class="flex-1 bg-brand-darkBg overflow-y-auto p-6">
+        <main class="flex-1 bg-[#f8fafc] overflow-y-auto p-6">
             <div class="max-w-5xl mx-auto space-y-6">
 
-                <!-- Page Header with Add Bank Modal -->
-                <div class="flex items-center justify-between border-b border-brand-border pb-4">
-                    <div class="flex items-center space-x-3">
-                        <i class="bi bi-bank2 text-brand-blue text-2xl"></i>
-                        <div>
-                            <h1 class="text-lg font-bold text-white">Bank Management</h1>
-                            <p class="text-xs text-brand-muted">Configure registered banks and bank administrator accounts</p>
-                        </div>
+                <!-- Page Header with Add Bank Modal Trigger -->
+                <div class="flex items-center justify-between border-b border-slate-200 pb-4">
+                    <div>
+                        <h1 class="text-lg font-bold text-slate-900">Bank Management</h1>
+                        <p class="text-xs text-slate-500">Configure registered banks and bank administrator accounts</p>
                     </div>
-                    <button id="open-add-bank-modal" class="px-4 py-2 bg-brand-blue hover:bg-brand-blue/90 active:scale-95 transition text-white font-bold rounded-lg text-xs flex items-center shadow-lg">
+                    <button id="open-add-bank-modal" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 active:scale-95 transition text-white font-bold rounded-lg text-xs flex items-center shadow-xs">
                         <i class="bi bi-plus-lg mr-1.5"></i> Add Bank
                     </button>
                 </div>
 
                 <!-- Registered Banks Table -->
-                <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6">
-                    <div class="flex items-center justify-between border-b border-brand-border pb-4 mb-5">
+                <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-xs">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
                         <div class="flex items-center space-x-2">
-                            <i class="bi bi-list-task text-brand-blue text-lg"></i>
-                            <h2 class="text-sm font-bold text-white">Registered Banks</h2>
+                            <i class="bi bi-list-task text-sky-600 text-lg"></i>
+                            <h2 class="text-sm font-bold text-slate-900">Registered Banks</h2>
                         </div>
-                        <span id="banks-count" class="bg-brand-darkBg px-2 py-0.5 rounded text-[10px] text-brand-muted font-normal"></span>
+                        <span id="banks-count" class="bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full text-xs font-semibold"></span>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm border-collapse">
+                        <table class="w-full text-left text-xs border-collapse">
                             <thead>
-                                <tr class="border-b border-brand-border text-brand-muted text-xs uppercase tracking-wider">
+                                <tr class="border-b border-slate-200 text-slate-400 text-[10px] uppercase tracking-wider">
                                     <th class="py-3 pr-4 font-bold w-16">ID</th>
                                     <th class="py-3 pr-4 font-bold">Bank Name</th>
                                     <th class="py-3 pr-4 font-bold">Bank Admin</th>
@@ -143,10 +161,10 @@
                                     <th class="py-3 font-bold text-right">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="banks-table-body" class="divide-y divide-brand-border/40 text-slate-300">
+                            <tbody id="banks-table-body" class="divide-y divide-slate-100 text-slate-700">
                                 <tr>
-                                    <td colspan="5" class="py-8 text-center text-brand-muted text-xs">
-                                        <i class="bi bi-hourglass-split mr-2 animate-spin"></i> Loading banks...
+                                    <td colspan="5" class="py-8 text-center text-slate-400 text-xs">
+                                        <i class="bi bi-arrow-repeat mr-2 animate-spin"></i> Loading banks...
                                     </td>
                                 </tr>
                             </tbody>
@@ -158,102 +176,86 @@
         </main>
     </div>
 
-    <div id="add-bank-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg shrink-0">
+    <!-- Add Bank Modal -->
+    <div id="add-bank-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white border border-slate-200 rounded-xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
                 <div class="flex items-center space-x-2">
-                    <i class="bi bi-bank2 text-brand-blue text-lg"></i>
-                    <h3 class="font-bold text-white text-sm">Add New Bank &amp; Admin</h3>
+                    <i class="bi bi-bank text-sky-600 text-lg"></i>
+                    <h3 class="font-bold text-slate-900 text-sm">Add New Bank &amp; Admin</h3>
                 </div>
-                <button id="close-add-bank-modal" type="button" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+                <button id="close-add-bank-modal" type="button" class="text-slate-400 hover:text-slate-700"><i class="bi bi-x-lg"></i></button>
             </div>
-            <form id="add-bank-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <form id="add-bank-form" class="flex flex-col flex-1 min-h-0 overflow-hidden text-xs">
                 <div class="p-5 space-y-4 overflow-y-auto flex-1">
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Bank Name *</label>
-                    <input id="bank-name" type="text"
-                        class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
-                        placeholder="e.g. Chase Bank" required />
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Bank Name *</label>
+                        <input id="bank-name" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" placeholder="e.g. Central City Bank" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Bank Admin Username *</label>
+                        <input id="bank-admin-username" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" placeholder="e.g. bankadmin" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Admin Email *</label>
+                        <input id="bank-admin-email" type="email" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" placeholder="admin@bank.com" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Admin Password *</label>
+                        <input id="bank-admin-password" type="password" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" placeholder="Min 6 characters" required />
+                    </div>
+                    <p id="add-bank-error" class="text-rose-600 text-xs"></p>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Bank Admin Username *</label>
-                    <input id="bank-admin-username" type="text"
-                        class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
-                        placeholder="e.g. chaseadmin" required />
+                <div class="flex justify-end space-x-3 p-4 border-t border-slate-100 bg-slate-50 shrink-0">
+                    <button type="button" id="cancel-add-bank" class="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 hover:bg-slate-100 transition">Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 transition text-white font-bold rounded-lg text-xs shadow-xs">Create Bank</button>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Admin Email *</label>
-                    <input id="bank-admin-email" type="email"
-                        class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
-                        placeholder="admin@bank.com" required />
-                </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Admin Password *</label>
-                    <input id="bank-admin-password" type="password"
-                        class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
-                        placeholder="Min 6 characters" required />
-                </div>
-                <p id="add-bank-error" class="text-brand-danger text-xs"></p>
-            </div>
-            <div class="flex justify-end space-x-3 p-4 border-t border-brand-border bg-brand-darkBg shrink-0">
-                <button type="button" id="cancel-add-bank" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
-                <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Create Bank</button>
-            </div>
-        </form>
-    </div>
+            </form>
+        </div>
     </div>
 
-    <!-- ── Edit Bank Modal ── -->
-    <div id="edit-bank-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-brand-sidebar border border-brand-border rounded-xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between p-4 border-b border-brand-border bg-brand-darkBg shrink-0">
+    <!-- Edit Bank Modal -->
+    <div id="edit-bank-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white border border-slate-200 rounded-xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
                 <div class="flex items-center space-x-2">
-                    <i class="bi bi-pencil-square text-brand-blue text-lg"></i>
-                    <h3 class="font-bold text-white text-sm">Edit Bank &amp; Admin</h3>
+                    <i class="bi bi-pencil-square text-sky-600 text-lg"></i>
+                    <h3 class="font-bold text-slate-900 text-sm">Edit Bank Info</h3>
                 </div>
-                <button id="close-edit-bank-modal" type="button" class="text-brand-muted hover:text-white"><i class="bi bi-x-lg"></i></button>
+                <button id="close-edit-bank-modal" type="button" class="text-slate-400 hover:text-slate-700"><i class="bi bi-x-lg"></i></button>
             </div>
-            <form id="edit-bank-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <form id="edit-bank-form" class="flex flex-col flex-1 min-h-0 overflow-hidden text-xs">
                 <input type="hidden" id="edit-bank-id" />
                 <div class="p-5 space-y-4 overflow-y-auto flex-1">
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Bank Name *</label>
-                    <input id="edit-bank-name" type="text"
-                        class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
-                        placeholder="e.g. Chase Bank" required />
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Bank Name *</label>
+                        <input id="edit-bank-name" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Bank Admin Username</label>
+                        <input id="edit-bank-admin-username" type="text" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Admin Email</label>
+                        <input id="edit-bank-admin-email" type="email" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Admin Password <span class="text-slate-400 font-normal lowercase">(optional)</span></label>
+                        <input id="edit-bank-admin-password" type="password" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-sky-500" placeholder="New password" />
+                    </div>
+                    <p id="edit-bank-error" class="text-rose-600 text-xs"></p>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Bank Admin Username</label>
-                    <input id="edit-bank-admin-username" type="text"
-                        class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
-                        placeholder="e.g. chaseadmin" />
+                <div class="flex justify-end space-x-3 p-4 border-t border-slate-100 bg-slate-50 shrink-0">
+                    <button type="button" id="cancel-edit-bank" class="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 hover:bg-slate-100 transition">Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 transition text-white font-bold rounded-lg text-xs shadow-xs">Save Changes</button>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Admin Email</label>
-                    <input id="edit-bank-admin-email" type="email"
-                        class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
-                        placeholder="admin@bank.com" />
-                </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-brand-muted mb-1.5">Admin Password <span class="text-brand-muted font-normal lowercase">(leave blank to keep current)</span></label>
-                    <input id="edit-bank-admin-password" type="password"
-                        class="w-full px-3 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-sm text-slate-100 placeholder-brand-muted focus:outline-none focus:border-brand-blue"
-                        placeholder="New password (optional)" />
-                </div>
-                <p id="edit-bank-error" class="text-brand-danger text-xs"></p>
-            </div>
-            <div class="flex justify-end space-x-3 p-4 border-t border-brand-border bg-brand-darkBg shrink-0">
-                <button type="button" id="cancel-edit-bank" class="px-4 py-2 bg-brand-darkBg border border-brand-border rounded-lg text-xs text-slate-300 hover:bg-brand-border transition">Cancel</button>
-                <button type="submit" class="px-5 py-2 bg-brand-blue hover:bg-brand-blue/90 transition text-white font-bold rounded-lg text-xs">Save Changes</button>
-            </div>
-        </form>
-    </div>
+            </form>
+        </div>
     </div>
 
-    <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
-
-    <script src="/static/banks.js?v=1.2"></script>
+    <script src="/static/nav.js?v=2.0"></script>
+    <script src="/static/banks.js?v=3.0"></script>
 </body>
 </html>
 
