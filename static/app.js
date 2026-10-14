@@ -1555,19 +1555,15 @@ function renderRtspSkeletonLoading(count = 6) {
                 </div>
                 <div class="p-4 space-y-3 bg-white flex-1 flex flex-col justify-between">
                     <div class="space-y-2.5">
-                        <div class="flex items-center justify-between">
-                            <div class="h-3.5 w-32 bg-slate-200 rounded skeleton-shimmer"></div>
-                            <div class="h-4 w-14 bg-slate-200 rounded-full skeleton-shimmer"></div>
-                        </div>
+                        <div class="h-3.5 w-36 bg-slate-200 rounded skeleton-shimmer"></div>
                         <div class="h-2.5 w-48 bg-slate-100 rounded skeleton-shimmer"></div>
                         <div class="flex items-center justify-between pt-1">
                             <div class="h-2.5 w-24 bg-slate-100 rounded skeleton-shimmer"></div>
                             <div class="h-2.5 w-16 bg-slate-100 rounded skeleton-shimmer"></div>
                         </div>
                     </div>
-                    <div class="pt-2.5 border-t border-slate-100 flex items-center gap-2">
-                        <div class="h-8 flex-1 bg-slate-200 rounded-lg skeleton-shimmer"></div>
-                        <div class="h-8 w-8 bg-slate-100 rounded-lg skeleton-shimmer"></div>
+                    <div class="pt-2.5 border-t border-slate-100 flex items-center">
+                        <div class="h-8 w-full bg-slate-200 rounded-lg skeleton-shimmer"></div>
                     </div>
                 </div>
             </div>
@@ -1610,7 +1606,6 @@ function renderLiveRtspGrid() {
     }
 
     grid.innerHTML = devices.map(d => {
-        const isOnline = d.is_online !== false;
         const hasRtsp = Boolean(d.rtsp_url && d.rtsp_url.trim());
         const rtspUrl = hasRtsp ? d.rtsp_url : "RTSP Stream Not Configured";
         const tokenParam = state.token ? `?token=${encodeURIComponent(state.token)}` : "";
@@ -1618,7 +1613,7 @@ function renderLiveRtspGrid() {
 
         return `
             <div class="camera-tile bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col hover:shadow-md transition">
-                <div class="camera-screen-container relative bg-slate-950 aspect-video overflow-hidden flex items-center justify-center cursor-pointer group" onclick="expandCamera(${d.id})" title="Click to view camera stream in console">
+                <div class="camera-screen-container relative bg-slate-950 aspect-video overflow-hidden flex items-center justify-center cursor-pointer group" onclick="expandCamera(${d.id})" title="Click to view camera stream in device console">
                     <!-- Live MJPEG Stream Image -->
                     ${hasRtsp ? `
                     <img id="grid-stream-${d.id}"
@@ -1649,18 +1644,13 @@ function renderLiveRtspGrid() {
                         <button onclick="event.stopPropagation(); window.reloadGridStream(${d.id})" class="mt-2.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-semibold border border-slate-700 transition">
                             <i class="bi bi-arrow-clockwise mr-1"></i> Reconnect Stream
                         </button>
-                        ` : `
-                        <button onclick="event.stopPropagation(); switchTab('devices'); window.openEditDeviceModal?.(${d.id})" class="mt-2.5 px-3 py-1 bg-sky-900/80 hover:bg-sky-800 text-sky-200 rounded text-[11px] font-semibold border border-sky-700/60 transition">
-                            <i class="bi bi-gear mr-1"></i> Configure RTSP
-                        </button>
-                        `}
+                        ` : ''}
                     </div>
 
-                    <!-- Top Bar Badges -->
-                    <div class="camera-screen-overlay absolute top-2.5 left-2.5 z-10 bg-black/70 backdrop-blur-xs px-2.5 py-1 rounded text-[10px] flex items-center space-x-1.5">
-                        <span class="w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}"></span>
-                        <span class="text-white font-bold tracking-wider">${isOnline ? 'LIVE' : 'OFFLINE'}</span>
-                        <span class="text-slate-300 font-sans font-semibold">· ${escapeHtml(d.name)}</span>
+                    <!-- Top Bar Camera Name Overlay -->
+                    <div class="camera-screen-overlay absolute top-2.5 left-2.5 z-10 bg-black/70 backdrop-blur-xs px-2.5 py-1 rounded text-[11px] flex items-center space-x-1.5">
+                        <i class="bi bi-camera-video-fill text-sky-400"></i>
+                        <span class="text-white font-bold tracking-wide">${escapeHtml(d.name)}</span>
                     </div>
 
                     <!-- Top Right Quick Actions -->
@@ -1668,7 +1658,7 @@ function renderLiveRtspGrid() {
                         <button onclick="window.reloadGridStream(${d.id})" class="w-7 h-7 bg-black/60 hover:bg-black/90 text-slate-300 hover:text-white rounded flex items-center justify-center text-xs backdrop-blur-xs transition" title="Reload Feed">
                             <i class="bi bi-arrow-clockwise"></i>
                         </button>
-                        <button onclick="expandCamera(${d.id})" class="w-7 h-7 bg-black/60 hover:bg-sky-600 text-slate-300 hover:text-white rounded flex items-center justify-center text-xs backdrop-blur-xs transition" title="Open Stream Console">
+                        <button onclick="expandCamera(${d.id})" class="w-7 h-7 bg-black/60 hover:bg-sky-600 text-slate-300 hover:text-white rounded flex items-center justify-center text-xs backdrop-blur-xs transition" title="Open Device Console">
                             <i class="bi bi-arrows-fullscreen"></i>
                         </button>
                     </div>
@@ -1679,9 +1669,6 @@ function renderLiveRtspGrid() {
                     <div class="space-y-1.5">
                         <div class="flex items-center justify-between">
                             <h4 class="text-xs font-bold text-slate-900 truncate">${escapeHtml(d.name)}</h4>
-                            <span class="${isOnline ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'} px-2 py-0.5 rounded border text-[10px] font-semibold uppercase shrink-0">
-                                ${isOnline ? 'Online' : 'Offline'}
-                            </span>
                         </div>
                         <div class="font-mono text-[11px] text-slate-400 truncate" title="${escapeHtml(rtspUrl)}">
                             <i class="bi bi-broadcast text-[10px] mr-1 text-slate-400"></i>${escapeHtml(rtspUrl)}
@@ -1692,15 +1679,10 @@ function renderLiveRtspGrid() {
                         </div>
                     </div>
 
-                    <div class="pt-2.5 border-t border-slate-100 flex items-center gap-2">
-                        <button onclick="expandCamera(${d.id})" class="flex-1 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded text-xs font-semibold shadow-xs transition flex items-center justify-center" title="Connect and view live camera">
+                    <!-- Only View Feed Button — Click navigates to device console -->
+                    <div class="pt-2.5 border-t border-slate-100 flex items-center">
+                        <button onclick="expandCamera(${d.id})" class="w-full py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-xs transition flex items-center justify-center cursor-pointer" title="View device live feed and console">
                             <i class="bi bi-play-circle mr-1.5"></i> View Feed
-                        </button>
-                        <button onclick="window.requestOtpForCamera(${d.id})" class="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-semibold shadow-xs transition flex items-center justify-center" title="Request OTP for this device">
-                            <i class="bi bi-key-fill mr-1.5"></i> Request OTP
-                        </button>
-                        <button onclick="window.openEditDeviceModal(${d.id})" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition" title="Edit Camera Settings">
-                            <i class="bi bi-pencil-square"></i>
                         </button>
                     </div>
                 </div>
