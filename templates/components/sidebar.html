@@ -1,0 +1,66 @@
+<!-- Master Common Navigation Sidebar Component -->
+<aside id="app-sidebar" class="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 overflow-y-auto select-none p-4">
+    <div>
+        <!-- Brand Header -->
+        <div class="flex items-center space-x-3 mb-5 px-1">
+            <img src="/static/image/logo/OTP_Shield_Access_Management.png" alt="OTP Shield Access Management" class="h-10 w-auto object-contain shrink-0" />
+            <div class="min-w-0">
+                <h1 class="text-xs font-bold text-slate-900 tracking-tight leading-tight">OTP Shield</h1>
+                <span class="text-[10px] text-slate-400 font-medium leading-tight block">Access Management</span>
+            </div>
+        </div>
+
+        <!-- Navigation Links -->
+        <nav class="space-y-0.5">
+            <div class="nav-section-title">Operations</div>
+            <a href="/dashboard" id="nav-overview" class="nav-item">
+                <i class="bi bi-grid-fill"></i> Overview Dashboard
+            </a>
+            <a href="/rtsp" id="nav-rtsp" class="nav-item">
+                <i class="bi bi-camera-video-fill"></i> Live RTSP Monitoring
+            </a>
+            <a href="/requests" id="nav-requests" class="nav-item">
+                <i class="bi bi-envelope-paper-fill"></i> Pending Access Requests
+            </a>
+            <a href="/alerts" id="nav-alerts" class="nav-item">
+                <i class="bi bi-shield-exclamation"></i> Security Alerts
+            </a>
+            <a href="/reports" id="nav-reports" class="nav-item">
+                <i class="bi bi-bar-chart-fill"></i> Reports
+            </a>
+
+            <div class="nav-section-title">Infrastructure</div>
+            <a href="/devices" id="nav-devices" class="nav-item">
+                <i class="bi bi-cpu-fill"></i> Device Management
+            </a>
+
+            <div class="nav-section-title">OTP Management</div>
+            <a href="/online-otp" id="nav-online-otp" class="nav-item">
+                <i class="bi bi-key-fill"></i> Online OTP Requests
+            </a>
+            <a href="/offline-otp" id="nav-offline-otp" class="nav-item">
+                <i class="bi bi-database-fill"></i> Bulk Offline OTP Database
+            </a>
+
+            <div class="nav-section-title">Administration</div>
+            <a href="/banks" id="nav-banks" class="nav-item">
+                <i class="bi bi-bank"></i> Bank Management
+            </a>
+            <a href="/branches" id="nav-branches" class="nav-item">
+                <i class="bi bi-diagram-3-fill"></i> Branch Management
+            </a>
+            <a href="/users" id="nav-users" class="nav-item">
+                <i class="bi bi-people-fill"></i> User Management
+            </a>
+            <a href="/logs" id="nav-logs" class="nav-item">
+                <i class="bi bi-journal-text"></i> Event Logs & Audit
+            </a>
+        </nav>
+    </div>
+
+    <!-- Bottom System Status -->
+    <div class="pt-3 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+        <span>OTP Shield v2.0</span>
+        <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Connected</span>
+    </div>
+</aside>
