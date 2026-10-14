@@ -739,7 +739,7 @@ function renderOnlineOtpDeviceGrid() {
         const pendingForDevice = (state.otpRequests || []).filter(r => r.device_id === d.id && r.status === "Pending").length;
 
         return `
-            <div class="bg-slate-50 border ${pendingForDevice > 0 ? 'border-amber-300 ring-1 ring-amber-100' : 'border-slate-200'} rounded-xl p-3.5 transition hover:shadow-md cursor-pointer" onclick="document.getElementById('online-otp-device-select').value='${d.id}'; document.getElementById('online-otp-device-select').dispatchEvent(new Event('change'));">
+            <div class="bg-slate-50 border ${pendingForDevice > 0 ? 'border-amber-300 ring-1 ring-amber-100' : 'border-slate-200'} rounded-xl p-3.5 transition hover:shadow-md cursor-pointer" onclick="const sel = document.getElementById('online-otp-device-select'); if (sel) { sel.value='${d.id}'; sel.dispatchEvent(new Event('change')); }">
                 <div class="flex items-center justify-between mb-2">
                     <span class="text-xs font-bold text-slate-900 truncate flex items-center">
                         <i class="bi bi-cpu-fill ${isOnline ? 'text-emerald-500' : 'text-rose-400'} mr-1.5"></i>
@@ -752,13 +752,17 @@ function renderOnlineOtpDeviceGrid() {
                 <div class="text-[10px] text-slate-500 truncate">
                     <i class="bi bi-geo-alt mr-1 text-slate-400"></i>${escapeHtml(d.location || 'No location')}
                 </div>
-                ${pendingForDevice > 0 ? `
-                <div class="mt-2 flex items-center">
-                    <span class="text-[10px] text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full font-bold flex items-center">
-                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 animate-pulse"></span>
-                        ${pendingForDevice} pending
-                    </span>
-                </div>` : ''}
+                <div class="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                    ${pendingForDevice > 0 ? `
+                        <span class="text-[9px] text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full font-bold flex items-center">
+                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 animate-pulse"></span>${pendingForDevice} pending
+                        </span>` : `
+                        <span class="text-[10px] text-slate-400">Click to view log</span>
+                    `}
+                    <a href="/devices?device=${d.id}" onclick="event.stopPropagation();" class="text-[10px] font-semibold text-sky-600 hover:text-sky-700 flex items-center">
+                        Console <i class="bi bi-box-arrow-up-right ml-1 text-[9px]"></i>
+                    </a>
+                </div>
             </div>
         `;
     }).join("");

@@ -64,55 +64,20 @@
                     </div>
                 </div>
 
-                <!-- Send Action Control Panel -->
-                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="text-sm font-bold text-slate-900 flex items-center">
-                            <i class="bi bi-send-fill text-sky-600 mr-2"></i> Send Action Control
-                        </h3>
-                        <div id="online-otp-action-status" class="flex items-center text-[11px] text-slate-400">
-                            <i class="bi bi-circle-fill mr-1" style="font-size:8px;"></i> Ready
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <!-- Device Select -->
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Target Device</label>
-                            <select id="online-otp-device-select" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
-                                <option value="">— Select Device —</option>
-                            </select>
-                        </div>
-                        <!-- Mode Select -->
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Action Mode</label>
-                            <select id="online-otp-mode-select" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
-                                <option value="no_threat">No Threat </option>
-                                <option value="thread">Thread </option>
-                                <option value="offline_otp">Offline OTP</option>
-                            </select>
-                        </div>
-                        <!-- Send Button -->
-                        <div class="flex items-end">
-                            <button id="online-otp-send-btn" class="w-full px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center justify-center transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                                <i class="bi bi-send-fill mr-1.5"></i> Send OTP Action
-                            </button>
-                        </div>
-                    </div>
-                    <div id="online-otp-hint" class="text-[10px] text-slate-400 flex items-center">
-                        <i class="bi bi-info-circle mr-1"></i> Select a device to send an OTP action
-                    </div>
-                </div>
-
                 <!-- Last Request & Acknowledgment -->
                 <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-sm font-bold text-slate-900 flex items-center">
                             <i class="bi bi-clock-history text-purple-600 mr-2"></i> Last Request & Acknowledgment
                         </h3>
-                        <button id="refresh-last-ack-btn" class="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-semibold border border-slate-200 transition cursor-pointer flex items-center">
-                            <i class="bi bi-arrow-clockwise mr-1"></i> Refresh
-                        </button>
+                        <div class="flex items-center space-x-2">
+                            <select id="online-otp-device-select" class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-700 focus:outline-none focus:border-sky-500">
+                                <option value="">— Select Device —</option>
+                            </select>
+                            <button id="refresh-last-ack-btn" class="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-semibold border border-slate-200 transition cursor-pointer flex items-center">
+                                <i class="bi bi-arrow-clockwise mr-1"></i> Refresh
+                            </button>
+                        </div>
                     </div>
                     <div id="last-ack-container" class="space-y-3">
                         <div class="text-center py-4 text-slate-400 text-xs">
